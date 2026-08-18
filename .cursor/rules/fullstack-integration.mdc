@@ -24,7 +24,7 @@ alwaysApply: false
 
 ## PR 自检（节选）
 
-- [ ] 分页/响应格式符合 `前后端开发规范.md` §2.2
+- [ ] 分页/响应格式符合 `doc/前后端开发规范.md` §2.2
 - [ ] 新接口有 `@RequirePermissions` 或 `@Public`
 - [ ] 前端操作按钮已包 `AuthButton`；无裸 `axios`
 - [ ] 401 并发刷新已验证；菜单/权限变更已更新 seed

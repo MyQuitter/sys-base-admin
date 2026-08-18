@@ -8,8 +8,8 @@ alwaysApply: true
 Monorepo：`server/`（NestJS 3000）+ `admin-web/`（React+Vite 5173）。
 
 **权威文档**（改动前先对齐）：
-- 编码约束 → `前后端开发规范.md`（v1.1）
-- 功能/排期/接口清单 → `技术方案文档.md`
+- 编码约束 → `doc/前后端开发规范.md`（v1.1）
+- 功能/排期/接口清单 → `doc/技术方案文档.md`
 - 后端模块域 → `modules/base/`（基础管理）、`modules/{feature}/`（扩展）
 
 ## 提交格式
