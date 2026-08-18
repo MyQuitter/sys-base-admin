@@ -1,0 +1,44 @@
+---
+description: NestJS 后端模块、DTO、数据库与 RBAC 规范
+globs: server/**/*.ts
+alwaysApply: false
+---
+
+# NestJS 后端
+
+## 模块结构
+
+业务模块按**功能域**组织在 `modules/base/`（基础管理）或 `modules/{feature}/`（扩展域）下。每子模块含 `*.module.ts`、`*.controller.ts`、`*.service.ts`、`dto/`、`entities/`。业务逻辑只在 Service，Controller 不写 DB 操作。
+
+## Controller
+
+```typescript
+// ✅ 静态路由在动态路由前；用 ParseIntPipe
+@Get(':id')
+findOne(@Param('id', ParseIntPipe) id: number) {
+  return this.userService.findOne(id);
+}
+```
+
+## DTO 与实体
+
+- 入参必须 DTO + class-validator；`UpdateDto extends PartialType(CreateDto)`
+- 实体继承 `BaseEntity`（id、createdAt、updatedAt、deletedAt）
+- 表名 `sys_` 前缀；列 snake_case，属性 camelCase
+- 写操作：`DataSource.transaction()`；禁止 SQL 拼接
+
+## RBAC
+
+```typescript
+@Public()              // 登录、健康检查
+@RequirePermissions('user:create')  // 格式：模块:操作
+```
+
+Guard 顺序：`JwtAuthGuard` → `PermissionsGuard`。
+
+登录响应：`accessToken` 放 body；`refresh_token` 写 `HttpOnly` Cookie（`SameSite=Lax`）。
+
+## 必做
+
+- Swagger：`@ApiTags`、`@ApiOperation`、`@ApiProperty`
+-  schema 变更走 migration，禁止仅改实体不迁移

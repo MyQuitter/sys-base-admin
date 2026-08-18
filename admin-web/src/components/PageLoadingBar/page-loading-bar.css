@@ -1,0 +1,29 @@
+.page-loading-bar {
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 110;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.page-loading-bar.is-active {
+  opacity: 1;
+}
+
+.page-loading-bar-track {
+  height: 100%;
+  background: rgba(22, 119, 255, 0.08);
+  overflow: hidden;
+}
+
+.page-loading-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #1677ff 0%, #4096ff 50%, #69b1ff 100%);
+  box-shadow: 0 0 10px rgba(22, 119, 255, 0.45);
+  border-radius: 0 2px 2px 0;
+  transition: width 0.18s ease-out;
+}

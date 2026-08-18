@@ -1,0 +1,48 @@
+---
+description: 前端优先使用 Ant Design 5 已有组件与 API，避免重复造轮子
+globs: admin-web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# 组件优先：Ant Design API 先行
+
+开发 `admin-web` 时，**先查 Ant Design 5 是否已有组件/属性可满足需求**，再考虑自定义实现。
+
+## 优先使用
+
+| 场景 | 使用 |
+|------|------|
+| 列表分页 | `Table` + `pagination` |
+| 搜索/表单 | `Form`、`Input`、`Select`、`DatePicker` |
+| 新增/编辑 | `Modal` + `Form` |
+| 树形 | `Tree`、`TreeSelect` |
+| 删除确认 | `Modal.confirm` |
+| 提示 | `message`、`notification` |
+| 图标 | `@ant-design/icons` |
+| 主题 | `ConfigProvider` `token` |
+
+## 禁止
+
+- 用原生 `table`/`div` 拼数据表格
+- 自己实现弹层、下拉、分页器（Ant Design 已提供时）
+- 为单次使用封装「万能组件」
+
+## 何时才写自定义组件
+
+- 项目已有：`AuthButton`、`PageTable` 等（`components/`）
+- 同一交互在 **≥2 个页面** 重复出现
+- Ant Design 无法满足，且需业务封装（如部门左树右表）
+
+```tsx
+// ❌ 避免：手写表格与分页
+<div>{list.map(...)}</div>
+
+// ✅ 优先：Table 内置 API
+<Table
+  rowKey="id"
+  dataSource={data?.items}
+  pagination={{ current: page, pageSize, total, onChange: setPage }}
+/>
+```
+
+完整列表页模式见 `前后端开发规范.md` §4.8–§4.9。

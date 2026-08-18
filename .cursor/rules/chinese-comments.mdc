@@ -1,0 +1,69 @@
+---
+description: 功能组件与方法须写详细中文注释（JSDoc）
+globs: "{admin-web,server}/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# 中文注释规范
+
+新增或修改**导出**的功能组件、自定义 Hook、Service 方法、工具函数时，必须写**详细中文 JSDoc**。注释说明「做什么、为什么、关键入参/返回值」，不要复述代码字面意思。
+
+## 必须注释
+
+| 类型 | 要求 |
+|------|------|
+| 页面/布局组件 | 页面职责、主要交互、依赖 API |
+| 可复用组件 | Props 含义、使用场景、权限/边界行为 |
+| 自定义 Hook | 状态来源、副作用、返回值各字段含义 |
+| Service 方法 | 业务目的、权限/事务、异常场景 |
+| 工具函数 | 算法意图、参数约束、返回值说明 |
+
+## 组件示例
+
+```tsx
+/**
+ * 用户列表页：分页查询、新增/编辑/删除、重置密码。
+ * 行内操作受 RBAC 控制，通过 AuthButton 按权限码显隐。
+ */
+export default function UserListPage() { ... }
+
+/**
+ * 按后端菜单树节点渲染 Ant Design Menu items。
+ * @param nodes - `/api/menus/tree` 返回的菜单节点
+ * @returns 可直接传给 Menu 的 items 配置
+ */
+function toMenuItems(nodes: MenuTreeNode[]): MenuProps['items'] { ... }
+```
+
+## 方法示例
+
+```typescript
+/**
+ * 根据当前用户权限码过滤可见菜单，并保留父级目录节点。
+ * @param menus - 全量菜单记录
+ * @param permissionCodes - JWT/角色聚合后的权限码列表
+ * @returns 用户可见的扁平菜单集合
+ */
+private filterByPermissions(menus: Menu[], permissionCodes: string[]): Menu[] { ... }
+
+/**
+ * 为用户分配角色并更新基本信息。
+ * @throws NotFoundException 用户不存在
+ * @throws BusinessException 角色 ID 无效（由 ORM 关联校验）
+ */
+async update(id: number, dto: UpdateUserDto) { ... }
+```
+
+## 写法要求
+
+- 使用 `/** ... */`；`@param`、`@returns`、`@throws` 用中文描述
+- 复杂 Props / 对象字段在类型旁或 JSDoc 中逐项说明
+- 非显而易见分支、权限判断、防抖/刷新锁等写**行内中文注释**
+- 禁止：空注释、`// 获取用户`、`// 返回结果` 等无信息注释
+- 禁止：用英文注释替代中文（Swagger/API 字段英文除外）
+
+## 可不写
+
+- 纯 re-export、`index.ts` 聚合导出
+- 单行 getter、极简单透传（无业务含义）
+- 测试里仅描述断言步骤的辅助代码

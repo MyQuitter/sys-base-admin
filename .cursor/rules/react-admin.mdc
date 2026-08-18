@@ -1,0 +1,39 @@
+---
+description: React 管理后台页面、状态、请求与权限组件规范
+globs: admin-web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# React 管理后台
+
+## 分层
+
+| 目录 | 职责 |
+|------|------|
+| `api/` | HTTP 封装；`pages/` 与 `components/` 均禁止直接 `axios` |
+| `pages/` | 页面编排 |
+| `components/` | 可复用 UI（如 `AuthButton`） |
+| `stores/` | 全局状态（Token、菜单） |
+| `types/` | 与后端响应对齐的 TS 类型 |
+
+## 列表页模式
+
+搜索 Form → `AuthButton` 操作栏 → `Table` 分页 → `Modal`+`Form` 新增/编辑。
+
+```tsx
+<AuthButton permission="user:create" type="primary">新增</AuthButton>
+```
+
+## 请求
+
+统一走 `utils/request.ts`：`withCredentials: true`、注入 accessToken、解析 `{ code, data }`、401 刷新（Cookie 携带 Refresh）或登出。Refresh Token 不存 Store。
+
+## 组件
+
+- 函数组件 + Hooks；Props 必须有类型
+- 页面级状态用 `useState`，仅 Token/菜单进 Zustand
+- **优先 Ant Design 5 已有组件/API**（见 `antd-priority` 规则），删除前 `Modal.confirm`
+
+## 命名
+
+组件 `PascalCase.tsx`；API 函数动词开头 `getUserList`；常量 `UPPER_SNAKE_CASE`。

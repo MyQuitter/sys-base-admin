@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS bc_transaction (
+  id INT NOT NULL AUTO_INCREMENT,
+  tx_hash VARCHAR(66) NOT NULL,
+  chain_id INT NOT NULL,
+  `from` VARCHAR(42) NULL,
+  `to` VARCHAR(42) NULL,
+  contract_id INT NULL,
+  tx_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  block_number BIGINT NULL,
+  gas_used BIGINT NULL,
+  biz_ref VARCHAR(100) NULL,
+  error_message VARCHAR(500) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  deleted_at DATETIME(6) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_bc_transaction_chain_hash (chain_id, tx_hash),
+  KEY idx_bc_transaction_status (status),
+  KEY idx_bc_transaction_chain_id (chain_id)
+);

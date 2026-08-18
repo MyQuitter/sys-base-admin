@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS app_member (
+  id INT NOT NULL AUTO_INCREMENT,
+  phone VARCHAR(20) NULL,
+  email VARCHAR(100) NULL,
+  password VARCHAR(100) NOT NULL,
+  nickname VARCHAR(50) NULL,
+  avatar VARCHAR(500) NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  register_source VARCHAR(20) NOT NULL DEFAULT 'app',
+  last_login_at DATETIME NULL,
+  last_login_ip VARCHAR(50) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  deleted_at DATETIME(6) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_app_member_phone (phone),
+  UNIQUE KEY uk_app_member_email (email),
+  KEY idx_app_member_status (status),
+  KEY idx_app_member_created_at (created_at)
+);

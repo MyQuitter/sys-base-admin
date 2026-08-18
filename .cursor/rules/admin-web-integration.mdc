@@ -1,0 +1,12 @@
+---
+description: 前端联调、Token 与 API 层约定
+globs: admin-web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# 前端联调
+
+- Axios：`withCredentials: true`；Refresh Token 不存 Store
+- 401：调用 `/api/auth/refresh`（Cookie 自动携带），加锁防并发；失败 `logout()`
+- 页面/组件禁止裸 `axios`，统一 `api/` + `types/`
+- JSON 字段 camelCase，与后端响应类型对齐

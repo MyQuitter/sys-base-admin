@@ -1,0 +1,276 @@
+/* 登录页氛围背景：缓慢光斑漂移 + 网格呼吸 + 轻粒子上浮 */
+
+.login-page {
+  position: relative;
+  height: 100vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  isolation: isolate;
+  background: #0b3d8c;
+}
+
+.login-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 10% 20%, #1d6fdc 0%, transparent 55%),
+    radial-gradient(100% 70% at 90% 10%, #3aa0ff 0%, transparent 50%),
+    linear-gradient(155deg, #0d47a8 0%, #1565c0 42%, #1e88e5 78%, #42a5f5 100%);
+}
+
+.login-backdrop__blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: 0.45;
+  will-change: transform;
+}
+
+.login-backdrop__blob--a {
+  width: min(52vw, 480px);
+  height: min(52vw, 480px);
+  left: -8%;
+  top: -12%;
+  background: #64b5f6;
+  animation: login-blob-a 22s ease-in-out infinite;
+}
+
+.login-backdrop__blob--b {
+  width: min(46vw, 420px);
+  height: min(46vw, 420px);
+  right: -10%;
+  bottom: -8%;
+  background: #90caf9;
+  opacity: 0.35;
+  animation: login-blob-b 26s ease-in-out infinite;
+}
+
+.login-backdrop__blob--c {
+  width: min(38vw, 340px);
+  height: min(38vw, 340px);
+  left: 38%;
+  top: 42%;
+  background: #29b6f6;
+  opacity: 0.28;
+  animation: login-blob-c 18s ease-in-out infinite;
+}
+
+.login-backdrop__grid {
+  position: absolute;
+  inset: -20%;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 45%, #000 20%, transparent 75%);
+  animation: login-grid-drift 40s linear infinite;
+}
+
+.login-backdrop__ring {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+}
+
+.login-backdrop__ring--outer {
+  width: min(90vw, 720px);
+  height: min(90vw, 720px);
+  animation: login-ring-pulse 10s ease-in-out infinite;
+}
+
+.login-backdrop__ring--inner {
+  width: min(55vw, 420px);
+  height: min(55vw, 420px);
+  border-color: rgba(255, 255, 255, 0.08);
+  animation: login-ring-pulse 10s ease-in-out infinite reverse;
+  animation-delay: -3s;
+}
+
+.login-backdrop__particles {
+  position: absolute;
+  inset: 0;
+}
+
+.login-backdrop__particle {
+  position: absolute;
+  bottom: -12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  opacity: 0;
+  animation: login-particle-rise linear infinite;
+}
+
+.login-backdrop__particle:nth-child(1) {
+  left: 8%;
+  animation-duration: 11s;
+  animation-delay: 0s;
+}
+.login-backdrop__particle:nth-child(2) {
+  left: 18%;
+  width: 3px;
+  height: 3px;
+  animation-duration: 14s;
+  animation-delay: 2s;
+}
+.login-backdrop__particle:nth-child(3) {
+  left: 32%;
+  animation-duration: 12s;
+  animation-delay: 4.5s;
+}
+.login-backdrop__particle:nth-child(4) {
+  left: 48%;
+  width: 5px;
+  height: 5px;
+  animation-duration: 16s;
+  animation-delay: 1s;
+}
+.login-backdrop__particle:nth-child(5) {
+  left: 61%;
+  animation-duration: 13s;
+  animation-delay: 6s;
+}
+.login-backdrop__particle:nth-child(6) {
+  left: 74%;
+  width: 3px;
+  height: 3px;
+  animation-duration: 15s;
+  animation-delay: 3s;
+}
+.login-backdrop__particle:nth-child(7) {
+  left: 86%;
+  animation-duration: 12.5s;
+  animation-delay: 7.5s;
+}
+.login-backdrop__particle:nth-child(8) {
+  left: 93%;
+  width: 2px;
+  height: 2px;
+  animation-duration: 17s;
+  animation-delay: 5s;
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 420px;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  animation: login-card-enter 0.55s ease-out both;
+}
+
+@keyframes login-blob-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(12%, 18%) scale(1.08);
+  }
+  70% {
+    transform: translate(4%, 28%) scale(0.96);
+  }
+}
+
+@keyframes login-blob-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  35% {
+    transform: translate(-16%, -12%) scale(1.1);
+  }
+  65% {
+    transform: translate(-8%, -22%) scale(0.94);
+  }
+}
+
+@keyframes login-blob-c {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(18%, -22%) scale(1.12);
+  }
+}
+
+@keyframes login-grid-drift {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(48px, 48px);
+  }
+}
+
+@keyframes login-ring-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+@keyframes login-particle-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.7;
+  }
+  80% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(-100vh) scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes login-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-backdrop__blob,
+  .login-backdrop__grid,
+  .login-backdrop__ring,
+  .login-backdrop__particle,
+  .login-card {
+    animation: none !important;
+  }
+
+  .login-backdrop__blob {
+    opacity: 0.3;
+  }
+
+  .login-card {
+    opacity: 1;
+    transform: none;
+  }
+}

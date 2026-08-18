@@ -1,0 +1,32 @@
+---
+description: 项目总览、文档索引与全栈通用约定
+alwaysApply: true
+---
+
+# 项目核心约定
+
+Monorepo：`server/`（NestJS 3000）+ `admin-web/`（React+Vite 5173）。
+
+**权威文档**（改动前先对齐）：
+- 编码约束 → `前后端开发规范.md`（v1.1）
+- 功能/排期/接口清单 → `技术方案文档.md`
+- 后端模块域 → `modules/base/`（基础管理）、`modules/{feature}/`（扩展）
+
+## 提交格式
+
+`feat(scope): 描述`，scope 如 `user`、`auth`、`admin-web`。
+
+## API 契约（前后端共同遵守）
+
+- 前缀 `/api`，认证 `Authorization: Bearer <accessToken>`
+- Refresh Token：`HttpOnly` Cookie；前端 `withCredentials: true`，不存 Store
+- 响应：`{ code, message, data, timestamp }`，HTTP 状态码与 `code` 一致
+- 分页：`page`（从1）、`pageSize`（≤100），列表 `data: { items, total, page, pageSize }`
+- 权限码：`{模块}:{操作}`（如 `user:create`）
+- JSON 字段：camelCase
+
+## 禁止事项
+
+- 硬编码密钥、提交 `.env` 敏感内容
+- 生产环境 `synchronize: true`
+- 前后端权限码不一致
