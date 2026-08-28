@@ -1,4 +1,4 @@
-import { Button, Form, Input, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Space, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   exportOperationLogs,
@@ -9,6 +9,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 const actionLabels: Record<string, string> = {
   create: '创建',
   update: '更新',
@@ -57,7 +58,7 @@ export default function OperationLogPage() {
   const handleExport = async () => {
     try {
       await exportOperationLogs(filters);
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // downloadCsv 已提示错误
     }

@@ -1,4 +1,4 @@
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, InputNumber, Modal, Select, Space, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   checkChainHealth,
@@ -13,6 +13,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -76,7 +77,7 @@ export default function BlockchainChainPage() {
       .map((s: string) => s.trim())
       .filter(Boolean);
     if (!rpcUrls.length) {
-      message.error('请至少填写一个 RPC 地址');
+      toast.error('请至少填写一个 RPC 地址');
       return;
     }
     const payload = {
@@ -93,10 +94,10 @@ export default function BlockchainChainPage() {
     if (editing) {
       const { chainId: _c, ...rest } = payload;
       await updateChain(editing.id, rest);
-      message.success('链配置已更新');
+      toast.success('链配置已更新');
     } else {
       await createChain(payload);
-      message.success('链配置已创建');
+      toast.success('链配置已创建');
     }
     setModalOpen(false);
     loadData();
@@ -104,7 +105,7 @@ export default function BlockchainChainPage() {
 
   const handleDelete = async (id: number) => {
     await deleteChain(id);
-    message.success('已删除');
+    toast.success('已删除');
     loadData();
   };
 
@@ -113,9 +114,9 @@ export default function BlockchainChainPage() {
     try {
       const res = await checkChainHealth(id);
       if (res.ok) {
-        message.success(`探活成功：区块 ${res.blockNumber}，延迟 ${res.latencyMs}ms`);
+        toast.success(`探活成功：区块 ${res.blockNumber}，延迟 ${res.latencyMs}ms`);
       } else {
-        message.error(res.error ?? '探活失败');
+        toast.error(res.error ?? '探活失败');
       }
     } finally {
       setHealthLoadingId(null);

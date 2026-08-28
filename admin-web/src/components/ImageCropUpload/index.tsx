@@ -1,11 +1,12 @@
 import { RedoOutlined, UndoOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
-import { Button, Modal, Slider, Space, message } from 'antd';
+import { Button, Modal, Slider, Space } from 'antd';
 import { useRef, useState } from 'react';
 import Cropper, { type Area, type Point } from 'react-easy-crop';
 import { AuthButton } from '@/components/AuthButton';
 import { getCroppedImageFile } from '@/utils/imageCrop';
 import './image-crop-upload.css';
 
+import { toast } from '@/utils/toast';
 export interface ImageCropUploadProps {
   permission: string;
   buttonText: string;
@@ -52,7 +53,7 @@ export function ImageCropUpload({
 
   const handleSelectFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      message.error('请选择图片文件');
+      toast.error('请选择图片文件');
       return;
     }
     const reader = new FileReader();
@@ -76,7 +77,7 @@ export function ImageCropUpload({
       setOpen(false);
       resetState();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '裁剪上传失败');
+      toast.error(err instanceof Error ? err.message : '裁剪上传失败');
     } finally {
       setUploading(false);
     }

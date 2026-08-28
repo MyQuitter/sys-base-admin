@@ -1,9 +1,10 @@
 import { UploadOutlined } from '@ant-design/icons';
-import { Button, Upload, message } from 'antd';
+import { Button, Upload } from 'antd';
 import type { UploadFile, UploadProps } from 'antd/es/upload';
 import { useState } from 'react';
 import { uploadFiles, type FileItem } from '@/api/file';
 
+import { toast } from '@/utils/toast';
 export interface FileUploadProps {
   maxCount?: number;
   accept?: string;
@@ -28,7 +29,7 @@ export function FileUpload({
 
   const beforeUpload: UploadProps['beforeUpload'] = (file) => {
     if (file.size > maxSize) {
-      message.error(`文件大小不能超过 ${Math.round(maxSize / 1024 / 1024)}MB`);
+      toast.error(`文件大小不能超过 ${Math.round(maxSize / 1024 / 1024)}MB`);
       return Upload.LIST_IGNORE;
     }
     return false;
@@ -37,17 +38,17 @@ export function FileUpload({
   const handleUpload = async () => {
     const pending = fileList.filter((f) => f.originFileObj).map((f) => f.originFileObj as File);
     if (!pending.length) {
-      message.warning('请选择文件');
+      toast.warning('请选择文件');
       return;
     }
     setUploading(true);
     try {
       const result = await uploadFiles(pending);
-      message.success('上传成功');
+      toast.success('上传成功');
       setFileList([]);
       onSuccess?.(result);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '上传失败');
+      toast.error(err instanceof Error ? err.message : '上传失败');
     } finally {
       setUploading(false);
     }

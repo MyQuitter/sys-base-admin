@@ -1,4 +1,4 @@
-import { Form, Input, InputNumber, Modal, Select, message } from 'antd';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   createPosition,
@@ -10,6 +10,7 @@ import {
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -60,10 +61,10 @@ export default function PositionListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updatePosition(editing.id, { name: values.name, sort: values.sort, status: values.status });
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createPosition(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -109,7 +110,7 @@ export default function PositionListPage() {
                   permission="position:delete"
                   onClick={async () => {
                     await deletePosition(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >

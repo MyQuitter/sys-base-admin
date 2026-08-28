@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { Card, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tree, message } from 'antd';
+import { Card, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -13,6 +13,7 @@ import {
 import { getUsers, type UserItem } from '@/api/user';
 import { AuthButton } from '@/components/AuthButton';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -80,10 +81,10 @@ export default function DepartmentPage() {
     const values = await form.validateFields();
     if (isCreateMode) {
       await createDepartment(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     } else if (selectedId) {
       await updateDepartment(selectedId, values);
-      message.success('更新成功');
+      toast.success('更新成功');
     }
     setModalOpen(false);
     await loadTree();
@@ -117,7 +118,7 @@ export default function DepartmentPage() {
       </Col>
       <Col span={17}>
         {selectedId && detail ? (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={16}>
             <Card
               title={`部门：${detail.name}`}
               size="small"
@@ -139,7 +140,7 @@ export default function DepartmentPage() {
                     icon={<DeleteOutlined />}
                     onClick={async () => {
                       await deleteDepartment(selectedId);
-                      message.success('删除成功');
+                      toast.success('删除成功');
                       setSelectedId(undefined);
                       setDetail(null);
                       loadTree();

@@ -1,4 +1,4 @@
-import { Form, Input, InputNumber, Modal, Select, Tabs, message } from 'antd';
+import { Form, Input, InputNumber, Modal, Select, Tabs } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   createDictData,
@@ -15,6 +15,7 @@ import {
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -63,10 +64,10 @@ export default function DictListPage() {
     const values = await typeForm.validateFields();
     if (editingType) {
       await updateDictType(editingType.id, values);
-      message.success('类型更新成功');
+      toast.success('类型更新成功');
     } else {
       await createDictType(values);
-      message.success('类型创建成功');
+      toast.success('类型创建成功');
     }
     setTypeModalOpen(false);
     loadTypes();
@@ -76,10 +77,10 @@ export default function DictListPage() {
     const values = await dataForm.validateFields();
     if (editingData) {
       await updateDictData(editingData.id, values);
-      message.success('字典项更新成功');
+      toast.success('字典项更新成功');
     } else {
       await createDictData({ ...values, typeId: activeTypeId });
-      message.success('字典项创建成功');
+      toast.success('字典项创建成功');
     }
     setDataModalOpen(false);
     loadData();
@@ -133,7 +134,7 @@ export default function DictListPage() {
         data={dataList}
         pagination={false}
         onCreate={() => {
-          if (!activeTypeId) return message.warning('请先选择字典类型');
+          if (!activeTypeId) return toast.warning('请先选择字典类型');
           setEditingData(null);
           dataForm.resetFields();
           dataForm.setFieldsValue({ status: 1, sort: 0 });
@@ -172,7 +173,7 @@ export default function DictListPage() {
                   permission="dict:delete"
                   onClick={async () => {
                     await deleteDictData(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >
@@ -201,7 +202,7 @@ export default function DictListPage() {
               permission="dict:delete"
               onClick={async () => {
                 await deleteDictType(editingType.id);
-                message.success('类型已删除');
+                toast.success('类型已删除');
                 setTypeModalOpen(false);
                 setActiveTypeId(undefined);
                 loadTypes();

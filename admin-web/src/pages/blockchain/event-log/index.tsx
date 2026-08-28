@@ -1,4 +1,4 @@
-import { Button, Form, Input, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Select, Space, Tag } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import {
   exportEventLogs,
@@ -10,6 +10,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 /**
  * 合约事件日志：订阅自动抓取结果查询与导出。
  */
@@ -74,7 +75,7 @@ export default function BlockchainEventLogPage() {
   const handleExport = async () => {
     try {
       await exportEventLogs(filters);
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // exportEventLogs 已提示
     }

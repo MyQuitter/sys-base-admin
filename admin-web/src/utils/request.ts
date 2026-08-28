@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { message as antdMessage } from 'antd';
+import { toast } from '@/utils/toast';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { parseJwtPermissions } from '@/utils/jwt';
 import { useLoadingStore } from '@/stores/useLoadingStore';
@@ -69,7 +69,7 @@ request.interceptors.response.use(
     }
     const { code, data, message: msg } = res.data;
     if (code === 200) return data;
-    antdMessage.error(msg ?? '请求失败');
+    toast.error(msg ?? '请求失败');
     return Promise.reject(new Error(msg));
   },
   async (error) => {
@@ -118,11 +118,15 @@ request.interceptors.response.use(
       }
     }
 
-    const msg = error.response?.data?.message ?? '网络异常';
+    const msg =
+      error.response?.data?.message ??
+      (error.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : null) ??
+      error.message ??
+      '网络异常';
     if (!original?.skipErrorToast) {
-      antdMessage.error(msg);
+      toast.error(msg);
     }
-    return Promise.reject(error);
+    return Promise.reject(new Error(msg));
   },
 );
 

@@ -1,5 +1,5 @@
 import { FileImageOutlined, FileOutlined, UploadOutlined } from '@ant-design/icons';
-import { Image, Input, Modal, Popconfirm, Space, Table, Typography, message } from 'antd';
+import { Image, Input, Modal, Popconfirm, Space, Table, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   deleteFile,
@@ -12,6 +12,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { FileUpload } from '@/components/FileUpload';
 import { formatDateTime, formatFileSize } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 function FileTypeIcon({ mimeType }: { mimeType: string }) {
   if (mimeType.startsWith('image/')) {
     return <FileImageOutlined style={{ color: '#1677ff' }} />;
@@ -160,7 +161,7 @@ export default function FileManagePage() {
                   title="确认删除该文件？"
                   onConfirm={async () => {
                     await deleteFile(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >
@@ -179,7 +180,7 @@ export default function FileManagePage() {
         open={uploadOpen}
         footer={null}
         onCancel={() => setUploadOpen(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <FileUpload
           maxCount={10}

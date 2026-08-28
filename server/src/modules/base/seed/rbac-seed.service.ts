@@ -74,6 +74,12 @@ const PERMISSION_SEEDS = [
   { code: 'event-sub:create', name: '创建/扫描事件订阅', module: 'blockchain' },
   { code: 'event-sub:update', name: '更新事件订阅', module: 'blockchain' },
   { code: 'event-sub:delete', name: '删除事件订阅', module: 'blockchain' },
+  { code: 'crm-wl:config', name: 'CrmToken白名单配置', module: 'crm-whitelist' },
+  { code: 'crm-wl:trader-list', name: '交易白名单列表', module: 'crm-whitelist' },
+  { code: 'crm-wl:trader-write', name: '交易白名单写入', module: 'crm-whitelist' },
+  { code: 'crm-wl:node-list', name: '节点白名单列表', module: 'crm-whitelist' },
+  { code: 'crm-wl:node-write', name: '节点白名单写入', module: 'crm-whitelist' },
+  { code: 'crm-team:list', name: '链上团队数据列表', module: 'crm-whitelist' },
 ];
 
 interface MenuSeed {
@@ -106,9 +112,21 @@ const MENU_SEEDS: MenuSeed[] = [
     ],
   },
   {
+    name: 'CrmToken',
+    icon: 'SafetyCertificateOutlined',
+    sort: 4,
+    children: [
+      { name: '数据面板', path: '/crm-whitelist/panel', permissionCode: 'crm-team:list', sort: 1 },
+      { name: '合约配置', path: '/crm-whitelist/config', permissionCode: 'crm-wl:config', sort: 2 },
+      { name: '交易白名单', path: '/crm-whitelist/trader', permissionCode: 'crm-wl:trader-list', sort: 3 },
+      { name: '节点白名单', path: '/crm-whitelist/node', permissionCode: 'crm-wl:node-list', sort: 4 },
+      { name: '团队数据', path: '/crm-whitelist/team', permissionCode: 'crm-team:list', sort: 5 },
+    ],
+  },
+  {
     name: '系统管理',
     icon: 'SettingOutlined',
-    sort: 4,
+    sort: 5,
     children: [
       { name: '部门管理', path: '/org/department', permissionCode: 'department:list', sort: 1 },
       { name: '岗位管理', path: '/org/position', permissionCode: 'position:list', sort: 2 },
@@ -125,7 +143,7 @@ const MENU_SEEDS: MenuSeed[] = [
   {
     name: '运维监控',
     icon: 'MonitorOutlined',
-    sort: 5,
+    sort: 6,
     children: [
       { name: '操作日志', path: '/monitor/operation-log', permissionCode: 'log:operation', sort: 1 },
       { name: '登录日志', path: '/monitor/login-log', permissionCode: 'log:login', sort: 2 },
@@ -177,10 +195,33 @@ export class RbacSeedService implements OnModuleInit {
 
   /** 按 path 同步菜单显示名称（重命名场景） */
   private async syncMenuNames() {
+    // 旧 path 含 dashboard，易与工作台冲突；合并为 panel + crm-team:list
+    const legacy = await this.menuRepository.find({ where: { path: '/crm-whitelist/dashboard' } });
+    const panel = await this.menuRepository.findOne({ where: { path: '/crm-whitelist/panel' } });
+    if (legacy.length) {
+      if (panel) {
+        await this.menuRepository.softRemove(legacy);
+      } else {
+        await this.menuRepository.update(
+          { path: '/crm-whitelist/dashboard' },
+          { path: '/crm-whitelist/panel', permissionCode: 'crm-team:list', name: '数据面板', sort: 1 },
+        );
+      }
+    }
+    // 去重：同 path 多条时保留最小 id
+    const panels = await this.menuRepository.find({
+      where: { path: '/crm-whitelist/panel' },
+      order: { id: 'ASC' },
+    });
+    if (panels.length > 1) {
+      await this.menuRepository.softRemove(panels.slice(1));
+    }
+
     const renames = [
       { path: '/system/user', name: '系统用户' },
       { path: '/system/notice', name: '系统公告' },
       { path: '/member/list', name: '会员用户' },
+      { path: '/crm-whitelist/panel', name: '数据面板' },
     ];
     for (const item of renames) {
       await this.menuRepository.update({ path: item.path }, { name: item.name });
@@ -261,6 +302,15 @@ export class RbacSeedService implements OnModuleInit {
         menu = await this.menuRepository.findOne({
           where: { name: seed.name, parentId: parentId ?? IsNull() },
         });
+        if (!menu && seed.children?.length) {
+          const childPath = seed.children.find((child) => child.path)?.path;
+          if (childPath) {
+            const child = await this.menuRepository.findOne({ where: { path: childPath } });
+            if (child?.parentId) {
+              menu = await this.menuRepository.findOne({ where: { id: child.parentId } });
+            }
+          }
+        }
       }
       if (!menu) {
         menu = await this.menuRepository.save(

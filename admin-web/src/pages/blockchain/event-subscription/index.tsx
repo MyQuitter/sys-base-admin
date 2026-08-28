@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Space, Tag, message } from 'antd';
+import { Form, Input, Modal, Select, Space, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createEventSubscription,
@@ -16,6 +16,7 @@ import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 import { formatEventSignature, parseAbiEvents } from '@/utils/abi';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -116,10 +117,10 @@ export default function BlockchainEventSubscriptionPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateEventSubscription(editing.id, values);
-      message.success('订阅已更新');
+      toast.success('订阅已更新');
     } else {
       await createEventSubscription(values);
-      message.success('订阅已创建，将自动开始同步');
+      toast.success('订阅已创建，将自动开始同步');
     }
     setModalOpen(false);
     loadData();
@@ -127,7 +128,7 @@ export default function BlockchainEventSubscriptionPage() {
 
   const handleDelete = async (id: number) => {
     await deleteEventSubscription(id);
-    message.success('已删除');
+    toast.success('已删除');
     loadData();
   };
 
@@ -135,7 +136,7 @@ export default function BlockchainEventSubscriptionPage() {
     setScanningId(id);
     try {
       const res = await scanEventSubscription(id);
-      message.success(`补扫完成：新增 ${res.newLogs} 条，区块 ${res.scannedBlocks}`);
+      toast.success(`补扫完成：新增 ${res.newLogs} 条，区块 ${res.scannedBlocks}`);
       loadData();
     } finally {
       setScanningId(null);

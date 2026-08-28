@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Space, Tag } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import {
   createTransaction,
@@ -12,6 +12,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 const statusColor: Record<string, string> = {
   pending: 'processing',
   success: 'success',
@@ -84,7 +85,7 @@ export default function BlockchainTransactionPage() {
   const handleCreate = async () => {
     const values = await createForm.validateFields();
     await createTransaction(values);
-    message.success('交易已登记，将自动同步链上状态');
+    toast.success('交易已登记，将自动同步链上状态');
     setModalOpen(false);
     createForm.resetFields();
     loadData();
@@ -94,7 +95,7 @@ export default function BlockchainTransactionPage() {
     setSyncingId(id);
     try {
       await syncTransaction(id);
-      message.success('补同步完成');
+      toast.success('补同步完成');
       loadData();
     } finally {
       setSyncingId(null);
@@ -104,7 +105,7 @@ export default function BlockchainTransactionPage() {
   const handleExport = async () => {
     try {
       await exportTransactions(filters);
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // exportTransactions 已提示
     }

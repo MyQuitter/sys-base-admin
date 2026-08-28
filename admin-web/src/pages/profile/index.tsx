@@ -1,8 +1,9 @@
-import { Button, Card, Form, Input, Tabs, message } from 'antd';
+import { Button, Card, Form, Input, Tabs } from 'antd';
 import { useEffect, useState } from 'react';
 import { changePassword, getProfile, updateProfile } from '@/api/auth';
 import { useAuthStore } from '@/stores/useAuthStore';
 
+import { toast } from '@/utils/toast';
 /**
  * 个人中心：修改昵称与登录密码（需校验原密码）。
  */
@@ -32,7 +33,7 @@ export default function ProfilePage() {
           permissions: useAuthStore.getState().userInfo?.permissions ?? [],
         });
       }
-      message.success('资料已更新');
+      toast.success('资料已更新');
     } finally {
       setLoading(false);
     }
@@ -41,11 +42,11 @@ export default function ProfilePage() {
   const handlePasswordSave = async () => {
     const values = await pwdForm.validateFields();
     if (values.newPassword !== values.confirmPassword) {
-      message.error('两次输入的新密码不一致');
+      toast.error('两次输入的新密码不一致');
       return;
     }
     await changePassword({ oldPassword: values.oldPassword, newPassword: values.newPassword });
-    message.success('密码已修改');
+    toast.success('密码已修改');
     pwdForm.resetFields();
   };
 

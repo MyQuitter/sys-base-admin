@@ -18,6 +18,9 @@ export interface ExplorerTxItem {
   gasUsed?: string;
   isError?: string;
   txreceipt_status?: string;
+  /** 合约调用 input，用于按 method 过滤 */
+  input?: string;
+  methodId?: string;
 }
 
 interface ExplorerApiResponse {

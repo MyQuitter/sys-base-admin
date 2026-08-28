@@ -1,9 +1,19 @@
-import { ConfigProvider } from 'antd';
+import { App as AntdApp, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { router } from '@/router';
 import { useSiteStore } from '@/stores/useSiteStore';
+import { setMessageApi } from '@/utils/toast';
+
+/** 把 App.useApp().message 绑定到全局 toast，供 axios / 非组件代码使用 */
+function MessageApiBinder({ children }: { children: ReactNode }) {
+  const { message } = AntdApp.useApp();
+  useEffect(() => {
+    setMessageApi(message);
+  }, [message]);
+  return children;
+}
 
 export default function App() {
   const fetchSiteSetting = useSiteStore((s) => s.fetchSiteSetting);
@@ -32,7 +42,11 @@ export default function App() {
         },
       }}
     >
-      <RouterProvider router={router} />
+      <AntdApp>
+        <MessageApiBinder>
+          <RouterProvider router={router} />
+        </MessageApiBinder>
+      </AntdApp>
     </ConfigProvider>
   );
 }

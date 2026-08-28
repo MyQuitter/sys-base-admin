@@ -118,7 +118,7 @@ export default function DashboardPage() {
           </div>
         </Col>
         <Col xs={24} lg={8}>
-          <Card className="dashboard-user-card" bordered={false}>
+          <Card className="dashboard-user-card" variant="borderless">
             <Avatar size={64} style={{ background: '#1677ff', fontSize: 28, flexShrink: 0 }}>
               {displayName.slice(0, 1)}
             </Avatar>
@@ -149,7 +149,7 @@ export default function DashboardPage() {
           <Col xs={12} sm={8} lg={4} key={stat.key}>
             <Card
               className={`dashboard-stat-card clickable ${stat.color}`}
-              bordered={false}
+              variant="borderless"
               onClick={() => stat.path && navigateTo(stat.path, stat.label)}
             >
               {loading ? (
@@ -169,7 +169,7 @@ export default function DashboardPage() {
       <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
         <Col xs={24} lg={14}>
           <div className="dashboard-section-title">快捷入口</div>
-          <Card bordered={false} className="dashboard-panel">
+          <Card variant="borderless" className="dashboard-panel">
             {quickLinks.length ? (
               <div className="dashboard-quick-grid">
                 {quickLinks.map((node) => (
@@ -190,7 +190,7 @@ export default function DashboardPage() {
         </Col>
         <Col xs={24} lg={10}>
           <div className="dashboard-section-title">最新公告</div>
-          <Card bordered={false} className="dashboard-panel">
+          <Card variant="borderless" className="dashboard-panel">
             {loading ? (
               <Skeleton active paragraph={{ rows: 4 }} />
             ) : overview?.recentNotices.length ? (
@@ -219,7 +219,7 @@ export default function DashboardPage() {
       <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
         <Col xs={24} lg={12}>
           <div className="dashboard-section-title">最近访问</div>
-          <Card bordered={false} className="dashboard-panel">
+          <Card variant="borderless" className="dashboard-panel">
             {recentTabs.length ? (
               recentTabs.map((tab) => (
                 <div
@@ -241,7 +241,7 @@ export default function DashboardPage() {
         </Col>
         <Col xs={24} lg={12}>
           <div className="dashboard-section-title">模块统计</div>
-          <Card bordered={false} className="dashboard-panel">
+          <Card variant="borderless" className="dashboard-panel">
             {loading ? (
               <Skeleton active paragraph={{ rows: 3 }} />
             ) : (

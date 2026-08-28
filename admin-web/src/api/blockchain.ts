@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { message } from 'antd';
+
 import request from '@/utils/request';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { PageResult } from '@/types/api';
 
+import { toast } from '@/utils/toast';
 export interface ChainItem {
   id: number;
   chainId: number;
@@ -297,7 +298,7 @@ export async function exportTransactions(params?: TransactionQuery) {
     URL.revokeObjectURL(url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '导出失败';
-    message.error(msg);
+    toast.error(msg);
     throw err;
   }
 }
@@ -349,7 +350,7 @@ export async function exportEventLogs(params?: EventLogQuery) {
     URL.revokeObjectURL(url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '导出失败';
-    message.error(msg);
+    toast.error(msg);
     throw err;
   }
 }

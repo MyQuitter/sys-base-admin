@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { message } from 'antd';
+
 import request from '@/utils/request';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { PageResult } from '@/types/api';
 
+import { toast } from '@/utils/toast';
 export interface MemberItem {
   id: number;
   phone?: string;
@@ -94,7 +95,7 @@ export async function exportMembers(params?: MemberQuery) {
     URL.revokeObjectURL(url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '导出失败';
-    message.error(msg);
+    toast.error(msg);
     throw err;
   }
 }

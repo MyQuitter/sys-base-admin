@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Tree, message } from 'antd';
+import { Form, Input, Modal, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -13,6 +13,7 @@ import { getPermissions } from '@/api/permission';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 /**
  * 角色管理页：角色 CRUD 与权限分配（Modal 内 Tree 勾选）。
  * 权限树按 module 分组展示，提交 permissionIds 至 assignRolePermissions。
@@ -73,10 +74,10 @@ export default function RoleListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateRole(editing.id, { name: values.name, description: values.description });
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createRole(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -92,7 +93,7 @@ export default function RoleListPage() {
     if (!currentRole) return;
     const permissionIds = checkedKeys.filter((k) => typeof k === 'number') as number[];
     await assignRolePermissions(currentRole.id, permissionIds);
-    message.success('权限分配成功');
+    toast.success('权限分配成功');
     setPermModalOpen(false);
     loadData();
   };
@@ -144,7 +145,7 @@ export default function RoleListPage() {
                   permission="role:delete"
                   onClick={async () => {
                     await deleteRole(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >

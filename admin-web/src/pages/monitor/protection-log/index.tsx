@@ -1,4 +1,4 @@
-import { Button, Form, Input, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Select, Space, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   exportProtectionLogs,
@@ -9,6 +9,7 @@ import { formatDateTime } from '@/utils/format';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 const ERROR_CODE_OPTIONS = [
   { label: 'AUTH_FAILED', value: 'AUTH_FAILED' },
   { label: 'LOGIN_LOCKED', value: 'LOGIN_LOCKED' },
@@ -90,7 +91,7 @@ export default function ProtectionLogPage() {
   const handleExport = async () => {
     try {
       await exportProtectionLogs(filters);
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // downloadCsv 已提示错误
     }

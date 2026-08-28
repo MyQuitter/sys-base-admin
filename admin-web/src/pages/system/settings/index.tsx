@@ -1,4 +1,4 @@
-import { Card, Form, Input, Radio, Select, Tabs, Typography, message } from 'antd';
+import { Card, Form, Input, Radio, Select, Tabs, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   clearSiteFavicon,
@@ -17,6 +17,7 @@ import { useSiteStore } from '@/stores/useSiteStore';
 import { withCacheBust } from '@/utils/branding';
 import './settings.css';
 
+import { toast } from '@/utils/toast';
 /**
  * 系统设置页：站点信息与登录配置分 Tab 管理。
  */
@@ -62,14 +63,14 @@ export default function SystemSettingsPage() {
     const values = await form.validateFields();
     const setting = await updateSiteSetting(values);
     syncPreview(setting);
-    message.success('保存成功');
+    toast.success('保存成功');
   };
 
   const handleBrandingUpload =
     (upload: (file: File) => Promise<SiteSetting>) => async (file: File) => {
       const setting = await upload(file);
       syncPreview(setting);
-      message.success('上传成功');
+      toast.success('上传成功');
     };
 
   const logoFallbackChar = siteName.slice(0, 1) || '默';
@@ -114,7 +115,7 @@ export default function SystemSettingsPage() {
                   onClick={async () => {
                     const setting = await clearSiteLogo();
                     syncPreview(setting);
-                    message.success('已清除 Logo');
+                    toast.success('已清除 Logo');
                   }}
                 >
                   清除
@@ -148,7 +149,7 @@ export default function SystemSettingsPage() {
                   onClick={async () => {
                     const setting = await clearSiteFavicon();
                     syncPreview(setting);
-                    message.success('已清除网站图标');
+                    toast.success('已清除网站图标');
                   }}
                 >
                   清除

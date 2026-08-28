@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { Form, Input, Modal, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   bindUserWallet,
@@ -15,6 +15,7 @@ import { getRoles } from '@/api/role';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -85,10 +86,10 @@ export default function UserListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateUser(editing.id, values);
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createUser(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -96,7 +97,7 @@ export default function UserListPage() {
 
   const handleDelete = async (id: number) => {
     await deleteUser(id);
-    message.success('删除成功');
+    toast.success('删除成功');
     loadData();
   };
 
@@ -110,7 +111,7 @@ export default function UserListPage() {
     const values = await pwdForm.validateFields();
     if (!pwdUserId) return;
     await resetPassword(pwdUserId, values.password);
-    message.success('密码已重置');
+    toast.success('密码已重置');
     setPwdModalOpen(false);
   };
 
@@ -124,18 +125,18 @@ export default function UserListPage() {
     const values = await walletForm.validateFields();
     if (!walletUser) return;
     if (!isAddress(values.walletAddress)) {
-      message.error('钱包地址格式无效');
+      toast.error('钱包地址格式无效');
       return;
     }
     await bindUserWallet(walletUser.id, values.walletAddress);
-    message.success('钱包绑定成功');
+    toast.success('钱包绑定成功');
     setWalletModalOpen(false);
     loadData();
   };
 
   const handleUnbindWallet = async (record: UserItem) => {
     await unbindUserWallet(record.id);
-    message.success('已解绑钱包');
+    toast.success('已解绑钱包');
     loadData();
   };
 

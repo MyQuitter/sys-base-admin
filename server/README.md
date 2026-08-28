@@ -1,99 +1,176 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# server（NestJS 后端）
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+基础管理系统 API 服务。全局前缀 `/api`，默认端口 `3000`。
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+相关文档：[根 README](../README.md) · [技术方案 §9 部署](../doc/技术方案文档.md) · [前后端开发规范 §6](../doc/前后端开发规范.md)
 
-## Description
+## 环境要求
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| 组件 | 版本 |
+|------|------|
+| Node.js | >= 20 |
+| MySQL | >= 8.0 |
+| Redis | >= 7.0 |
 
-## Project setup
+## 本地开发
+
+仓库根目录启动 MySQL / Redis：
 
 ```bash
-$ npm install
+docker-compose up -d
+# MySQL → localhost:3307，账号 root/root，库 sys_base
+# Redis → localhost:6380
 ```
-
-## Compile and run the project
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cd server
+cp .env.development .env   # 首次；按需修改密钥与连接
+npm install
+npm run start:dev
 ```
 
-## Run tests
+| 地址 | 说明 |
+|------|------|
+| http://localhost:3000/api | API |
+| http://localhost:3000/api/docs | Swagger |
+| `GET /api/health` | 健康检查（MySQL / Redis / 进程） |
+
+默认管理员：`admin` / `Admin@123`（登录后请到个人中心修改密码）。
+
+开发环境 `NODE_ENV=development` 时 TypeORM `synchronize: true` 会自动同步表结构；**生产禁止开启**。
+
+## 生产部署
+
+### 1. 准备服务器
+
+- 安装 Node.js 20+、Nginx（或其它反向代理）
+- 准备 MySQL、Redis（本机、Docker 或云托管）
+- 后端建议仅本机监听 `3000`，对外只暴露 80/443
+
+### 2. 拉取代码并安装依赖
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+git clone <repo-url> /opt/base
+cd /opt/base/server
+npm ci
 ```
 
-## Deployment
+### 3. 配置环境变量
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+应用会按顺序加载 `.env.${NODE_ENV}` 与 `.env`（见 `app.module.ts`）。生产请设置 `NODE_ENV=production`，并配置例如：
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+NODE_ENV=production
+PORT=3000
+
+DB_HOST=<mysql-host>
+DB_PORT=3306
+DB_USERNAME=<user>
+DB_PASSWORD=<password>
+DB_DATABASE=sys_base
+
+REDIS_HOST=<redis-host>
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+JWT_SECRET=<至少32位随机串>
+JWT_ACCESS_TOKEN_EXPIRES_IN=15m
+JWT_REFRESH_TOKEN_EXPIRES_IN=7d
+
+CORS_ORIGINS=https://your-admin.example.com
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+注意：
 
-## Resources
+- **禁止**将含密钥的 `.env` / `.env.production` 提交到 Git
+- 生产环境 **禁止** `synchronize: true`（仅在 `development` 自动开启）
+- 表结构变更使用 `server/scripts/*.sql` 手动执行或纳入运维流程
+- Refresh Token 使用 HttpOnly Cookie；生产 Cookie 为 `secure`，需 HTTPS
 
-Check out a few resources that may come in handy when working with NestJS:
+### 4. 初始化数据库
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+1. 创建库 `sys_base`（字符集 `utf8mb4`）
+2. 按需执行 `server/scripts/` 下 SQL（增量功能脚本）
+3. 首次启动后 RBAC 种子会创建默认管理员（库为空时）；立即修改默认密码
 
-## Support
+### 5. 构建并启动
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+cd /opt/base/server
+npm run build
+NODE_ENV=production npm run start:prod
+# 等价：node dist/main
+```
 
-## Stay in touch
+推荐 PM2 常驻：
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+npm i -g pm2
+cd /opt/base/server
+NODE_ENV=production pm2 start dist/main --name base-api
+pm2 save && pm2 startup
+```
 
-## License
+### 6. Nginx 反向代理（与前端同域）
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+前端先构建：`cd admin-web && npm ci && npm run build`（生产 `VITE_API_BASE_URL=/api`）。
+
+```nginx
+server {
+    listen 80;
+    server_name your-admin.example.com;
+    root /opt/base/admin-web/dist;
+    index index.html;
+
+    location /api {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 20m;   # 与 UPLOAD_MAX_SIZE 对齐
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+生产建议全站 HTTPS（证书由 Let’s Encrypt 或云厂商配置）。
+
+### 7. 发布后检查
+
+```bash
+curl -s http://127.0.0.1:3000/api/health
+# 或经域名：curl -s https://your-admin.example.com/api/health
+```
+
+- 确认 CORS、`CORS_ORIGINS` 与前端域名一致
+- Swagger（`/api/docs`）生产可按需关闭或限制内网访问
+
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `npm run start:dev` | 开发热重载 |
+| `npm run build` | 编译到 `dist/` |
+| `npm run start:prod` | 生产启动（`node dist/main`） |
+| `npm run lint` | ESLint |
+| `npm test` | 单元测试 |
+
+## 目录说明（简要）
+
+```
+server/
+├── src/
+│   ├── modules/base/       # 认证、用户、菜单、RBAC 等
+│   ├── modules/member/     # C 端会员
+│   ├── modules/blockchain/ # 链 / 合约 / 交易 / 事件
+│   ├── modules/crm-whitelist/
+│   └── config/             # 环境变量映射
+├── scripts/                # 生产侧增量 SQL
+└── dist/                   # build 产物
+```

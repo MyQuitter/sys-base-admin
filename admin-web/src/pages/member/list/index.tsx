@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Space, message } from 'antd';
+import { Form, Input, Modal, Select, Space } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   createMember,
@@ -13,6 +13,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -90,15 +91,15 @@ export default function MemberListPage() {
   const handleSubmit = async () => {
     const values = await form.validateFields();
     if (!values.phone?.trim() && !values.email?.trim()) {
-      message.error('手机号与邮箱至少填写一项');
+      toast.error('手机号与邮箱至少填写一项');
       return;
     }
     if (editing) {
       await updateMember(editing.id, values);
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createMember(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -106,7 +107,7 @@ export default function MemberListPage() {
 
   const handleDelete = async (id: number) => {
     await deleteMember(id);
-    message.success('删除成功');
+    toast.success('删除成功');
     loadData();
   };
 
@@ -120,14 +121,14 @@ export default function MemberListPage() {
     const values = await pwdForm.validateFields();
     if (!pwdMemberId) return;
     await resetMemberPassword(pwdMemberId, values.password);
-    message.success('密码已重置');
+    toast.success('密码已重置');
     setPwdModalOpen(false);
   };
 
   const handleExport = async () => {
     try {
       await exportMembers({ keyword: keyword || undefined });
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // exportMembers 已提示错误
     }

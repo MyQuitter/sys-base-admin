@@ -1,4 +1,4 @@
-import { Alert, Form, Input, Modal, Popconfirm, Select, Space, Tag, Tooltip, message } from 'antd';
+import { Alert, Form, Input, Modal, Popconfirm, Select, Space, Tag, Tooltip } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -17,6 +17,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 import { formatDateTime } from '@/utils/format';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -84,10 +85,10 @@ export default function BlockchainContractPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateContract(editing.id, values);
-      message.success('合约已更新');
+      toast.success('合约已更新');
     } else {
       await createContract(values);
-      message.success('合约已登记');
+      toast.success('合约已登记');
     }
     setModalOpen(false);
     loadData();
@@ -95,7 +96,7 @@ export default function BlockchainContractPage() {
 
   const handleDelete = async (id: number) => {
     await deleteContract(id);
-    message.success('已删除');
+    toast.success('已删除');
     loadData();
   };
 
@@ -103,7 +104,7 @@ export default function BlockchainContractPage() {
     setSyncingId(id);
     try {
       const res = await syncContractTransactions(id, reset ? { reset: true } : undefined);
-      message.success(
+      toast.success(
         `浏览器同步完成：新增 ${res.imported} 条，跳过 ${res.skipped} 条${res.lastBlock ? `，区块至 ${res.lastBlock}` : ''}`,
       );
       loadData();
@@ -116,7 +117,7 @@ export default function BlockchainContractPage() {
     setSubscribingId(id);
     try {
       await subscribeContractTransfer(id);
-      message.success('已创建 Transfer 事件订阅，将通过 RPC 自动监听');
+      toast.success('已创建 Transfer 事件订阅，将通过 RPC 自动监听');
       navigate('/blockchain/event-subscription');
     } finally {
       setSubscribingId(null);
@@ -137,7 +138,7 @@ export default function BlockchainContractPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="链上监听说明"
+        title="链上监听说明"
         description={
           <>
             推荐优先使用 <strong>RPC 事件订阅</strong>（纯节点，无需浏览器 API）监听 Transfer / 自定义事件；
@@ -308,7 +309,7 @@ export default function BlockchainContractPage() {
             <Alert
               type="warning"
               showIcon
-              message="浏览器 API 仅适合全量历史"
+              title="浏览器 API 仅适合全量历史"
               description={`仅浏览器 API 可做：${listenGuide.summary.explorerOnly.join('、')}`}
             />
           </>

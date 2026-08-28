@@ -1,4 +1,4 @@
-import { Form, Input, Modal, message } from 'antd';
+import { Form, Input, Modal } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   createPermission,
@@ -10,6 +10,7 @@ import {
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 /**
  * 权限点管理页：维护 `{模块}:{操作}` 格式的权限码。
  * 编辑时编码不可变，仅可修改名称与所属模块。
@@ -50,10 +51,10 @@ export default function PermissionListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updatePermission(editing.id, { name: values.name, module: values.module });
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createPermission(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -87,7 +88,7 @@ export default function PermissionListPage() {
                   permission="permission:delete"
                   onClick={async () => {
                     await deletePermission(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >

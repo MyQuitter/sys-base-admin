@@ -36,6 +36,6 @@ import { TransactionService } from './services/transaction.service';
     EventSubscriptionService,
     BlockchainRpcService,
   ],
-  exports: [ChainService, TransactionService],
+  exports: [ChainService, TransactionService, BlockchainRpcService],
 })
 export class BlockchainModule {}

@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { BaseModule } from './modules/base/base.module';
 import { BlockchainModule } from './modules/blockchain/blockchain.module';
+import { CrmWhitelistModule } from './modules/crm-whitelist/crm-whitelist.module';
 import { MemberModule } from './modules/member/member.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { MemberModule } from './modules/member/member.module';
     BaseModule,
     MemberModule,
     BlockchainModule,
+    CrmWhitelistModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

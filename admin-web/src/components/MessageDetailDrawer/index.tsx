@@ -31,7 +31,7 @@ export function MessageDetailDrawer({ messageId, open, onClose }: MessageDetailD
   }, [open, messageId, refresh]);
 
   return (
-    <Drawer title={detail?.title ?? '消息详情'} open={open} width={480} onClose={onClose} destroyOnHidden>
+    <Drawer title={detail?.title ?? '消息详情'} open={open} size={480} onClose={onClose} destroyOnHidden>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
         {formatDateTime(detail?.createdAt)}
       </Typography.Paragraph>

@@ -1,5 +1,5 @@
 import { WalletOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Form, Input, Steps, Typography, message } from 'antd';
+import { Alert, Button, Card, Form, Input, Steps, Typography } from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -17,6 +17,7 @@ import { withCacheBust } from '@/utils/branding';
 import { connectWallet, ensureWalletChain, shortenAddress, signMessage } from '@/utils/wallet';
 import './login.css';
 
+import { toast } from '@/utils/toast';
 type LoginErrorScope = 'password' | 'wallet';
 
 interface LoginErrorState {
@@ -155,7 +156,7 @@ async function finishLogin(
   deps.setAuth(accessToken, userInfo);
   deps.resetTabs();
   await deps.fetchMenus();
-  message.success('登录成功');
+  toast.success('登录成功');
   deps.navigate('/dashboard', { replace: true });
 }
 
@@ -194,7 +195,7 @@ export default function LoginPage() {
 
   const showLoginErrorAlert = (error: LoginErrorState) => {
     setLoginError(error);
-    message.error(error.title);
+    toast.error(error.title);
   };
 
   const runWalletSignIn = async (options?: { loginTicket?: string }) => {
@@ -262,7 +263,7 @@ export default function LoginPage() {
         setBoundWalletMasked(res.boundWalletMasked);
         setWalletMismatch(undefined);
         setBothStep(1);
-        message.success('账户密码验证通过，请继续完成钱包签名');
+        toast.success('账户密码验证通过，请继续完成钱包签名');
         return;
       }
       await handleAuthSuccess(res.accessToken, res.userInfo);
@@ -301,10 +302,9 @@ export default function LoginPage() {
       <Alert
         type="error"
         showIcon
-        closable
-        onClose={() => setLoginError(undefined)}
+        closable={{ onClose: () => setLoginError(undefined) }}
         style={{ marginBottom: 16 }}
-        message={loginError.title}
+        title={loginError.title}
         description={
           <>
             <div>{loginError.message}</div>
@@ -351,7 +351,7 @@ export default function LoginPage() {
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message="双重验证登录"
+              title="双重验证登录"
               description="须先验证账户密码，再使用与该账号绑定的钱包在指定链上签名，两步均通过后方可进入系统。"
             />
             <Steps
@@ -377,7 +377,7 @@ export default function LoginPage() {
             <Form
               layout="vertical"
               onFinish={onPasswordFinish}
-              initialValues={{ username: 'admin', password: 'Admin@123' }}
+              initialValues={{ username: '', password: '' }}
             >
               <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
                 <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
@@ -425,7 +425,7 @@ export default function LoginPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message={`账户「${verifiedUsername ?? ''}」已通过密码验证`}
+              title={`账户「${verifiedUsername ?? ''}」已通过密码验证`}
               description={
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                   <li>
@@ -445,15 +445,16 @@ export default function LoginPage() {
               <Alert
                 type="error"
                 showIcon
-                closable
-                onClose={() => {
-                  setWalletMismatch(undefined);
-                  if (loginError?.errorCode === 'WALLET_ADDRESS_MISMATCH') {
-                    setLoginError(undefined);
-                  }
+                closable={{
+                  onClose: () => {
+                    setWalletMismatch(undefined);
+                    if (loginError?.errorCode === 'WALLET_ADDRESS_MISMATCH') {
+                      setLoginError(undefined);
+                    }
+                  },
                 }}
                 style={{ marginBottom: 16 }}
-                message="钱包地址与绑定账户不一致"
+                title="钱包地址与绑定账户不一致"
                 description={
                   <>
                     <div>

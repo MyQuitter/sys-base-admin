@@ -1,10 +1,11 @@
-import { Button, Form, Input, Select, Space, Tag, message } from 'antd';
+import { Button, Form, Input, Select, Space, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import { exportLoginLogs, getLoginLogs, type LoginLogItem } from '@/api/log';
 import { formatDateTime } from '@/utils/format';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { toast } from '@/utils/toast';
 /**
  * 登录日志页：成功/失败筛选与 CSV 导出。
  */
@@ -47,7 +48,7 @@ export default function LoginLogPage() {
   const handleExport = async () => {
     try {
       await exportLoginLogs(filters);
-      message.success('导出成功');
+      toast.success('导出成功');
     } catch {
       // downloadCsv 已提示错误
     }

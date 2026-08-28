@@ -126,7 +126,7 @@ export default function MyMessagesPage() {
       <Drawer
         title={detail?.title}
         open={drawerOpen}
-        width={480}
+        size={480}
         onClose={() => setDrawerOpen(false)}
         destroyOnHidden
       >
