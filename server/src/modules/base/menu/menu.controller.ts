@@ -15,9 +15,9 @@ export class MenuController {
 
   @Get('tree')
   @ApiOperation({ summary: '获取当前用户可见菜单树' })
-  getTree(@Req() req: { user?: { permissions?: string[] } }) {
+  getTree(@Req() req: { user?: { userId?: number; permissions?: string[] } }) {
     const permissions = req.user?.permissions ?? [];
-    return this.menuService.getTreeForUser(permissions);
+    return this.menuService.getTreeForUser(permissions, req.user?.userId);
   }
 
   @Get()

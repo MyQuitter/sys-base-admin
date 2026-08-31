@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { Navigate, createBrowserRouter } from 'react-router-dom';
 import BasicLayout from '@/layouts/BasicLayout';
 import { AuthGuard } from '@/router/guard';
+import { HomeRedirect } from '@/router/home-redirect';
 
 const LoginPage = lazy(() => import('@/pages/login'));
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
@@ -44,7 +45,7 @@ export const router = createBrowserRouter([
       {
         element: <BasicLayout />,
         children: [
-          { index: true, element: <Navigate to="/dashboard" replace /> },
+          { index: true, element: <HomeRedirect /> },
           { path: 'dashboard', element: suspense(<DashboardPage />) },
           { path: 'member/list', element: suspense(<MemberListPage />) },
           { path: 'blockchain/chain', element: suspense(<BlockchainChainPage />) },
@@ -73,5 +74,5 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: '*', element: <Navigate to="/dashboard" replace /> },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);

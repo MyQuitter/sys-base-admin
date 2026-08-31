@@ -18,23 +18,24 @@ interface TabState {
   closeLeftTabs: () => string;
   /** 关闭当前标签右侧可关闭的标签 */
   closeRightTabs: () => string;
-  /** 关闭除当前与首页外的标签 */
+  /** 关闭除当前外的标签 */
   closeOtherTabs: () => string;
-  /** 关闭除首页外全部标签 */
+  /** 关闭到仅剩当前标签 */
   closeAllTabs: () => string;
   setActiveKey: (key: string) => void;
   /** 根据最新菜单标题刷新已打开标签的显示名 */
   syncTabLabels: (resolveTitle: (path: string) => string) => void;
+  /** 去掉当前用户已不可见的标签（如未分配的工作台） */
+  dropUnauthorizedTabs: (allowed: (path: string) => boolean, fallbackKey?: string) => string;
   reset: () => void;
 }
 
-const HOME_TAB: AppTab = { key: '/dashboard', label: '首页', closable: false };
 const TAB_STORAGE_KEY = 'app-open-tabs';
 
 function loadPersistedTabs(): { tabs: AppTab[]; activeKey: string } {
-  const fallback = { tabs: [HOME_TAB], activeKey: HOME_TAB.key };
+  const empty = { tabs: [] as AppTab[], activeKey: '' };
   const raw = localStorage.getItem(TAB_STORAGE_KEY);
-  if (!raw) return fallback;
+  if (!raw) return empty;
 
   try {
     const parsed = JSON.parse(raw) as { tabs?: AppTab[]; activeKey?: string };
@@ -42,13 +43,12 @@ function loadPersistedTabs(): { tabs: AppTab[]; activeKey: string } {
       parsed.tabs?.filter((tab) => tab?.key && tab?.label).map((tab) => ({
         key: tab.key,
         label: tab.label,
-        closable: tab.key !== HOME_TAB.key,
+        closable: true,
       })) ?? [];
-    const mergedTabs = [HOME_TAB, ...tabs.filter((tab) => tab.key !== HOME_TAB.key)];
-    const activeKey = mergedTabs.some((tab) => tab.key === parsed.activeKey) ? parsed.activeKey! : HOME_TAB.key;
-    return { tabs: mergedTabs, activeKey };
+    const activeKey = tabs.some((tab) => tab.key === parsed.activeKey) ? parsed.activeKey! : (tabs[0]?.key ?? '');
+    return { tabs, activeKey };
   } catch {
-    return fallback;
+    return empty;
   }
 }
 
@@ -59,7 +59,7 @@ function persistTabs(tabs: AppTab[], activeKey: string) {
 const persistedState = loadPersistedTabs();
 
 /**
- * 多标签页状态：首页固定不可关闭，其余页面从侧边栏打开时追加标签。
+ * 多标签页状态：标签均可关闭，不再强制钉死工作台。
  */
 export const useTabStore = create<TabState>((set, get) => ({
   tabs: persistedState.tabs,
@@ -73,7 +73,7 @@ export const useTabStore = create<TabState>((set, get) => ({
             ? { ...tab, label }
             : tab,
         )
-      : [...tabs, { key, label, closable: key !== '/dashboard' }];
+      : [...tabs, { key, label, closable: true }];
     persistTabs(nextTabs, key);
     set({
       tabs: nextTabs,
@@ -81,46 +81,47 @@ export const useTabStore = create<TabState>((set, get) => ({
     });
   },
   closeTab: (key) => {
-    if (key === '/dashboard') return '/dashboard';
     const { tabs, activeKey } = get();
     const nextTabs = tabs.filter((t) => t.key !== key);
     let nextKey = activeKey;
     if (activeKey === key) {
       const idx = tabs.findIndex((t) => t.key === key);
-      const fallback = nextTabs[Math.max(0, idx - 1)] ?? HOME_TAB;
-      nextKey = fallback.key;
+      nextKey = nextTabs[Math.max(0, idx - 1)]?.key ?? nextTabs[0]?.key ?? '';
     }
-    persistTabs(nextTabs.length ? nextTabs : [HOME_TAB], nextKey);
-    set({ tabs: nextTabs.length ? nextTabs : [HOME_TAB], activeKey: nextKey });
+    persistTabs(nextTabs, nextKey);
+    set({ tabs: nextTabs, activeKey: nextKey });
     return nextKey;
   },
   closeLeftTabs: () => {
     const { tabs, activeKey } = get();
     const activeIdx = tabs.findIndex((t) => t.key === activeKey);
     const nextTabs = tabs.filter((t, i) => i >= activeIdx || !t.closable);
-    persistTabs(nextTabs.length ? nextTabs : [HOME_TAB], activeKey);
-    set({ tabs: nextTabs.length ? nextTabs : [HOME_TAB], activeKey });
+    persistTabs(nextTabs, activeKey);
+    set({ tabs: nextTabs, activeKey });
     return activeKey;
   },
   closeRightTabs: () => {
     const { tabs, activeKey } = get();
     const activeIdx = tabs.findIndex((t) => t.key === activeKey);
     const nextTabs = tabs.filter((t, i) => i <= activeIdx || !t.closable);
-    persistTabs(nextTabs.length ? nextTabs : [HOME_TAB], activeKey);
-    set({ tabs: nextTabs.length ? nextTabs : [HOME_TAB], activeKey });
+    persistTabs(nextTabs, activeKey);
+    set({ tabs: nextTabs, activeKey });
     return activeKey;
   },
   closeOtherTabs: () => {
     const { tabs, activeKey } = get();
     const nextTabs = tabs.filter((t) => t.key === activeKey || !t.closable);
-    persistTabs(nextTabs.length ? nextTabs : [HOME_TAB], activeKey);
-    set({ tabs: nextTabs.length ? nextTabs : [HOME_TAB], activeKey });
+    persistTabs(nextTabs, activeKey);
+    set({ tabs: nextTabs, activeKey });
     return activeKey;
   },
   closeAllTabs: () => {
-    persistTabs([HOME_TAB], HOME_TAB.key);
-    set({ tabs: [HOME_TAB], activeKey: HOME_TAB.key });
-    return HOME_TAB.key;
+    const { tabs, activeKey } = get();
+    const current = tabs.find((t) => t.key === activeKey) ?? tabs[0];
+    const nextTabs = current ? [current] : [];
+    persistTabs(nextTabs, current?.key ?? '');
+    set({ tabs: nextTabs, activeKey: current?.key ?? '' });
+    return current?.key ?? '';
   },
   setActiveKey: (key) => {
     persistTabs(get().tabs, key);
@@ -135,8 +136,19 @@ export const useTabStore = create<TabState>((set, get) => ({
     persistTabs(nextTabs, activeKey);
     set({ tabs: nextTabs });
   },
+  dropUnauthorizedTabs: (allowed, fallbackKey) => {
+    const { tabs, activeKey } = get();
+    const nextTabs = tabs.filter((tab) => allowed(tab.key));
+    if (nextTabs.length === tabs.length) return activeKey;
+    const nextKey = nextTabs.some((t) => t.key === activeKey)
+      ? activeKey
+      : (fallbackKey && nextTabs.some((t) => t.key === fallbackKey) ? fallbackKey : nextTabs[0]?.key ?? fallbackKey ?? '');
+    persistTabs(nextTabs, nextKey);
+    set({ tabs: nextTabs, activeKey: nextKey });
+    return nextKey;
+  },
   reset: () => {
     localStorage.removeItem(TAB_STORAGE_KEY);
-    set({ tabs: [HOME_TAB], activeKey: '/dashboard' });
+    set({ tabs: [], activeKey: '' });
   },
 }));

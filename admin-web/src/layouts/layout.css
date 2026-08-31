@@ -270,6 +270,7 @@
 .pro-content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   margin: 0 16px 16px;
   padding: 16px;
   background: #fff;

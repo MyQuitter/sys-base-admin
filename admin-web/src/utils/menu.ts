@@ -30,6 +30,43 @@ export function getPageTitle(nodes: MenuTreeNode[], path: string): string {
   return findMenuTitle(nodes, path) ?? STATIC_PAGE_TITLES[path] ?? '页面';
 }
 
+/** 菜单树是否包含指定 path */
+export function menuTreeHasPath(nodes: MenuTreeNode[], path: string): boolean {
+  for (const node of nodes) {
+    if (node.path === path) return true;
+    if (node.children?.length && menuTreeHasPath(node.children, path)) return true;
+  }
+  return false;
+}
+
+/** 可见菜单中第一个叶子路径（深度优先） */
+export function firstMenuLeafPath(nodes: MenuTreeNode[]): string | undefined {
+  for (const node of nodes) {
+    if (node.children?.length) {
+      const child = firstMenuLeafPath(node.children);
+      if (child) return child;
+    } else if (node.path && node.path !== '/') {
+      return node.path;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 登录落地页：未分配工作台时进入第一个可见菜单，而不是写死 /dashboard。
+ */
+export function resolveLandingPath(nodes: MenuTreeNode[]): string {
+  return firstMenuLeafPath(nodes) ?? '/dashboard';
+}
+
+/**
+ * 当前路由是否允许停留（个人中心始终可进）。
+ */
+export function isPathAllowed(nodes: MenuTreeNode[], path: string): boolean {
+  if (path === '/profile' || path.startsWith('/profile/')) return true;
+  return menuTreeHasPath(nodes, path);
+}
+
 /**
  * 根据路径解析应高亮的侧边栏菜单 key 列表（含父级）。
  */

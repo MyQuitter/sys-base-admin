@@ -5,6 +5,67 @@
 html,
 body,
 #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  background: #f0f4fa;
+}
+
+/* 弹层一律限制在视口内，避免把整页撑出滚动条 */
+.ant-modal-wrap {
+  overflow: hidden !important;
+}
+
+.ant-modal {
+  top: 24px !important;
+  padding-bottom: 0 !important;
+  max-width: calc(100vw - 32px);
+}
+
+.ant-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.ant-modal .ant-modal-header,
+.ant-modal .ant-modal-footer {
+  flex-shrink: 0;
+}
+
+.ant-modal .ant-modal-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.ant-drawer-content-wrapper {
+  max-width: 100vw !important;
+}
+
+.ant-drawer-body {
+  overflow: auto;
+}
+
+.ant-select-dropdown,
+.ant-dropdown,
+.ant-picker-dropdown {
+  max-width: calc(100vw - 16px);
+}
+
+.ant-image-preview-wrap {
+  overflow: hidden;
+}
+
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
