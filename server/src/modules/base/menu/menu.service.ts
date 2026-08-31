@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessException } from '../../../common/exceptions/business.exception';
+import { User } from '../user/entities/user.entity';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { Menu } from './entities/menu.entity';
@@ -23,6 +24,8 @@ export class MenuService {
   constructor(
     @InjectRepository(Menu)
     private readonly menuRepository: Repository<Menu>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   /**
@@ -85,12 +88,58 @@ export class MenuService {
   }
 
   /**
-   * 获取当前用户可见的菜单树（侧边栏数据源）。
-   * 个人中心与 E2E 测试菜单不出现在导航中。
+   * 按明确勾选的菜单 ID 过滤；子项可见时向上补齐目录。
    */
-  async getTreeForUser(permissionCodes: string[]) {
+  private filterByMenuIds(menus: Menu[], menuIds: number[]): Menu[] {
+    const assigned = new Set(menuIds);
+    const visibleIds = new Set<number>();
+
+    menus.forEach((menu) => {
+      if (menu.status === 1 && assigned.has(menu.id)) visibleIds.add(menu.id);
+    });
+
+    const addAncestors = (menu: Menu) => {
+      if (menu.parentId && !visibleIds.has(menu.parentId)) {
+        const parent = menus.find((m) => m.id === menu.parentId);
+        if (parent) {
+          visibleIds.add(parent.id);
+          addAncestors(parent);
+        }
+      }
+    };
+    menus.filter((m) => visibleIds.has(m.id)).forEach(addAncestors);
+
+    return menus.filter((m) => visibleIds.has(m.id));
+  }
+
+  /**
+   * 获取当前用户可见的菜单树（侧边栏数据源）。
+   * 若任一角色已「分配菜单」，则只展示勾选菜单的并集；否则回退为按权限码过滤。
+   */
+  async getTreeForUser(permissionCodes: string[], userId?: number) {
     const menus = await this.menuRepository.find({ order: { sort: 'ASC', id: 'ASC' } });
     const navMenus = menus.filter((m) => this.isNavMenu(m));
+
+    if (userId) {
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        relations: { roles: { menus: true, permissions: true } },
+      });
+      const roles = user?.roles ?? [];
+      if (roles.some((role) => role.menuRestricted)) {
+        const menuIds = new Set<number>();
+        for (const role of roles) {
+          if (role.menuRestricted) {
+            role.menus?.forEach((menu) => menuIds.add(menu.id));
+          } else {
+            const codes = role.permissions?.map((p) => p.code) ?? [];
+            this.filterByPermissions(navMenus, codes).forEach((menu) => menuIds.add(menu.id));
+          }
+        }
+        return this.buildTree(this.filterByMenuIds(navMenus, [...menuIds]));
+      }
+    }
+
     const filtered = this.filterByPermissions(navMenus, permissionCodes);
     return this.buildTree(filtered);
   }

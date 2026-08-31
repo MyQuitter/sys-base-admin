@@ -7,6 +7,7 @@ const ctx = {
   suffix: Date.now(),
   permissionId: 0,
   roleId: 0,
+  roleDefaultPermCount: 0,
   userId: 0,
   menuId: 0,
   departmentId: 0,
@@ -122,12 +123,57 @@ describe('P1+P2 RBAC & Business (e2e)', () => {
       ctx.roleId = res.body.data.id;
     });
 
-    it('POST /api/roles/:id/permissions 分配权限', async () => {
-      await request(app.getHttpServer())
+    it('GET /api/roles/menu-options 可分配菜单', async () => {
+      const res = await request(app.getHttpServer()).get('/api/roles/menu-options').set(auth()).expect(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
+    });
+
+    it('POST /api/roles/:id/permissions 未分配菜单时拒绝', async () => {
+      const res = await request(app.getHttpServer())
         .post(`/api/roles/${ctx.roleId}/permissions`)
         .set(auth())
         .send({ permissionIds: [ctx.permissionId] })
+        .expect(400);
+      expect(res.body.errorCode).toBe('MENU_REQUIRED');
+    });
+
+    it('POST /api/roles/:id/menus 分配菜单后默认授予栏目权限', async () => {
+      const options = await request(app.getHttpServer()).get('/api/roles/menu-options').set(auth()).expect(200);
+      const menuIds = (options.body.data as { id: number; permissionCode?: string }[])
+        .filter((m) => m.permissionCode)
+        .slice(0, 3)
+        .map((m) => m.id);
+      const res = await request(app.getHttpServer())
+        .post(`/api/roles/${ctx.roleId}/menus`)
+        .set(auth())
+        .send({ menuIds })
         .expect(200);
+      expect(res.body.data.menuRestricted).toBe(true);
+      expect(res.body.data.menus?.length).toBe(menuIds.length);
+      expect(res.body.data.permissions?.length).toBeGreaterThan(0);
+      ctx.roleDefaultPermCount = res.body.data.permissions.length;
+    });
+
+    it('POST /api/roles/:id/permissions 可在菜单栏目内微调', async () => {
+      const detail = await request(app.getHttpServer()).get(`/api/roles/${ctx.roleId}`).set(auth()).expect(200);
+      const firstId = detail.body.data.permissions[0].id as number;
+      const res = await request(app.getHttpServer())
+        .post(`/api/roles/${ctx.roleId}/permissions`)
+        .set(auth())
+        .send({ permissionIds: [firstId] })
+        .expect(200);
+      expect(res.body.data.permissions).toHaveLength(1);
+      expect(res.body.data.permissions[0].id).toBe(firstId);
+    });
+
+    it('POST /api/roles/:id/permissions 空列表默认栏目下全部权限', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/roles/${ctx.roleId}/permissions`)
+        .set(auth())
+        .send({ permissionIds: [] })
+        .expect(200);
+      expect(res.body.data.permissions.length).toBe(ctx.roleDefaultPermCount);
     });
 
     it('GET /api/roles/:id 详情含权限', async () => {
@@ -360,7 +406,6 @@ describe('P1+P2 RBAC & Business (e2e)', () => {
         .send({
           title: `E2E公告-${ctx.suffix}`,
           content: '测试内容',
-          status: 0,
         })
         .expect(200);
       ctx.noticeId = res.body.data.id;
@@ -434,15 +479,22 @@ describe('P1+P2 RBAC & Business (e2e)', () => {
     });
 
     it('PUT /api/auth/password 修改密码（测试用户）', async () => {
-      await request(app.getHttpServer())
-        .post(`/api/users/${ctx.userId}/reset-password`)
+      // P1 末尾会删掉 e2e 用户，这里单独再建一个用于改密
+      const created = await request(app.getHttpServer())
+        .post('/api/users')
         .set(auth())
-        .send({ password: 'Test@123456' })
+        .send({
+          username: `e2e_pwd_${ctx.suffix}`,
+          password: 'Test@123456',
+          nickname: 'E2E改密',
+          roleIds: [ctx.roleId],
+        })
         .expect(200);
+      ctx.userId = created.body.data.id;
 
       const login = await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ username: `e2e_user_${ctx.suffix}`, password: 'Test@123456' })
+        .send({ username: `e2e_pwd_${ctx.suffix}`, password: 'Test@123456' })
         .expect(200);
       const userToken = login.body.data.accessToken;
 
@@ -454,7 +506,7 @@ describe('P1+P2 RBAC & Business (e2e)', () => {
 
       await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ username: `e2e_user_${ctx.suffix}`, password: 'NewPass@123' })
+        .send({ username: `e2e_pwd_${ctx.suffix}`, password: 'NewPass@123' })
         .expect(200);
     });
   });

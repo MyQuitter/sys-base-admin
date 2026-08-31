@@ -26,7 +26,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useMenuStore } from '@/stores/useMenuStore';
 import { useMessageStore } from '@/stores/useMessageStore';
 import { useTabStore } from '@/stores/useTabStore';
-import { findMenuOpenKeys, getPageTitle } from '@/utils/menu';
+import { findMenuOpenKeys, getPageTitle, isPathAllowed, resolveLandingPath } from '@/utils/menu';
 import { renderMenuIcon } from '@/utils/menuIcon';
 import './layout.css';
 
@@ -67,6 +67,7 @@ export default function BasicLayout() {
   const userInfo = useAuthStore((s) => s.userInfo);
   const logoutStore = useAuthStore((s) => s.logout);
   const menus = useMenuStore((s) => s.menus);
+  const menusLoaded = useMenuStore((s) => s.loaded);
   const fetchMenus = useMenuStore((s) => s.fetchMenus);
   const resetMenus = useMenuStore((s) => s.reset);
   const tabs = useTabStore((s) => s.tabs);
@@ -80,6 +81,7 @@ export default function BasicLayout() {
   const setActiveKey = useTabStore((s) => s.setActiveKey);
   const resetTabs = useTabStore((s) => s.reset);
   const syncTabLabels = useTabStore((s) => s.syncTabLabels);
+  const dropUnauthorizedTabs = useTabStore((s) => s.dropUnauthorizedTabs);
   const siteName = useSiteStore((s) => s.siteName);
   const siteSubtitle = useSiteStore((s) => s.siteSubtitle);
   const logoUrl = useSiteStore((s) => s.logoUrl);
@@ -97,6 +99,16 @@ export default function BasicLayout() {
   useEffect(() => {
     fetchMenus().catch(() => undefined);
   }, [fetchMenus]);
+
+  // 未分配的工作台等页面：从标签里去掉，并跳到第一个可见菜单
+  useEffect(() => {
+    if (!menusLoaded) return;
+    const landing = resolveLandingPath(menus);
+    dropUnauthorizedTabs((path) => isPathAllowed(menus, path), landing);
+    if (!isPathAllowed(menus, location.pathname) && landing && landing !== location.pathname) {
+      navigate(landing, { replace: true });
+    }
+  }, [menusLoaded, menus, location.pathname, navigate, dropUnauthorizedTabs]);
 
   // 菜单加载后同步标签标题（处理菜单重命名与 localStorage 缓存旧名）
   useEffect(() => {
@@ -140,13 +152,15 @@ export default function BasicLayout() {
 
   const sideMenuItems = useMemo<MenuProps['items']>(() => {
     if (menus.length) return toMenuItems(menus);
+    if (menusLoaded) return [];
     return [{ key: '/dashboard', icon: <DashboardOutlined />, label: '工作台' }];
-  }, [menus]);
+  }, [menus, menusLoaded]);
 
   const topMenuItems = useMemo<MenuProps['items']>(() => {
     if (menus.length) return toTopMenuItems(menus);
+    if (menusLoaded) return [];
     return [{ key: '/dashboard', label: '首页' }];
-  }, [menus]);
+  }, [menus, menusLoaded]);
 
   const selectedKey = useMemo(() => {
     const matched = findMenuOpenKeys(menus, location.pathname);
@@ -189,7 +203,7 @@ export default function BasicLayout() {
           : action === 'other'
             ? closeOtherTabs()
             : closeAllTabs();
-    if (nextKey !== location.pathname) {
+    if (nextKey && nextKey !== location.pathname) {
       navigate(nextKey);
     }
   };

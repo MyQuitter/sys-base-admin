@@ -1,22 +1,78 @@
-import { Form, Input, Modal, Tree } from 'antd';
+import { Form, Input, Modal, Tooltip, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  assignRoleMenus,
   assignRolePermissions,
   createRole,
   deleteRole,
+  getRoleMenuOptions,
   getRoles,
   updateRole,
   type RoleItem,
+  type RoleMenuOption,
 } from '@/api/role';
-import { getPermissions } from '@/api/permission';
+import { getPermissions, type PermissionItem } from '@/api/permission';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
 import { toast } from '@/utils/toast';
+
+function codePrefix(code?: string): string | undefined {
+  if (!code) return undefined;
+  const i = code.indexOf(':');
+  return i === -1 ? code : code.slice(0, i);
+}
+
+function buildMenuTree(menus: RoleMenuOption[]): DataNode[] {
+  const byParent = new Map<number | undefined, RoleMenuOption[]>();
+  menus.forEach((item) => {
+    const pid = item.parentId ?? undefined;
+    const list = byParent.get(pid) ?? [];
+    list.push(item);
+    byParent.set(pid, list);
+  });
+  const walk = (parentId?: number): DataNode[] =>
+    (byParent.get(parentId) ?? []).map((item) => {
+      const children = walk(item.id);
+      return {
+        key: item.id,
+        title: item.path ? `${item.name}  (${item.path})` : item.name,
+        children: children.length ? children : undefined,
+      };
+    });
+  return walk(undefined);
+}
+
+function buildPermTree(permissions: PermissionItem[]): DataNode[] {
+  const modules = [...new Set(permissions.map((p) => p.module ?? 'other'))];
+  return modules.map((mod) => ({
+    key: `mod-${mod}`,
+    title: mod,
+    selectable: false,
+    children: permissions
+      .filter((p) => (p.module ?? 'other') === mod)
+      .map((p) => ({ key: p.id, title: `${p.name} (${p.code})` })),
+  }));
+}
+
+function menuPrefixes(role: RoleItem, menuOptions: RoleMenuOption[]): Set<string> {
+  const selectedIds = new Set((role.menus ?? []).map((m) => m.id));
+  const prefixes = new Set<string>();
+  for (const menu of menuOptions) {
+    if (!selectedIds.has(menu.id)) continue;
+    const prefix = codePrefix(menu.permissionCode);
+    if (prefix) prefixes.add(prefix);
+  }
+  for (const menu of role.menus ?? []) {
+    const prefix = codePrefix(menu.permissionCode);
+    if (prefix) prefixes.add(prefix);
+  }
+  return prefixes;
+}
+
 /**
- * 角色管理页：角色 CRUD 与权限分配（Modal 内 Tree 勾选）。
- * 权限树按 module 分组展示，提交 permissionIds 至 assignRolePermissions。
+ * 角色管理页：先分配侧栏菜单，再按栏目微调接口权限；未勾选权限时默认栏目下全部权限。
  */
 export default function RoleListPage() {
   const [loading, setLoading] = useState(false);
@@ -24,10 +80,17 @@ export default function RoleListPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RoleItem | null>(null);
   const [permModalOpen, setPermModalOpen] = useState(false);
+  const [menuModalOpen, setMenuModalOpen] = useState(false);
   const [currentRole, setCurrentRole] = useState<RoleItem | null>(null);
   const [checkedKeys, setCheckedKeys] = useState<number[]>([]);
+  const [menuCheckedKeys, setMenuCheckedKeys] = useState<number[]>([]);
+  const [allPermissions, setAllPermissions] = useState<PermissionItem[]>([]);
   const [permTree, setPermTree] = useState<DataNode[]>([]);
+  const [menuOptions, setMenuOptions] = useState<RoleMenuOption[]>([]);
+  const menuHalfCheckedRef = useRef<number[]>([]);
   const [form] = Form.useForm();
+
+  const menuTree = useMemo(() => buildMenuTree(menuOptions), [menuOptions]);
 
   const loadData = async () => {
     setLoading(true);
@@ -38,24 +101,22 @@ export default function RoleListPage() {
     }
   };
 
-  const loadPermTree = async () => {
-    const permissions = await getPermissions();
-    const modules = [...new Set(permissions.map((p) => p.module ?? 'other'))];
-    setPermTree(
-      modules.map((mod) => ({
-        key: `mod-${mod}`,
-        title: mod,
-        selectable: false,
-        children: permissions
-          .filter((p) => (p.module ?? 'other') === mod)
-          .map((p) => ({ key: p.id, title: `${p.name} (${p.code})` })),
-      })),
-    );
+  const loadPerms = async () => {
+    setAllPermissions(await getPermissions());
+  };
+
+  const loadMenuOptions = async () => {
+    try {
+      setMenuOptions(await getRoleMenuOptions());
+    } catch {
+      setMenuOptions([]);
+    }
   };
 
   useEffect(() => {
     loadData();
-    loadPermTree();
+    void loadPerms();
+    void loadMenuOptions();
   }, []);
 
   const openCreate = () => {
@@ -84,17 +145,56 @@ export default function RoleListPage() {
   };
 
   const openAssign = (record: RoleItem) => {
+    if (!record.menuRestricted) {
+      toast.warning('请先分配菜单');
+      return;
+    }
+    const prefixes = menuPrefixes(record, menuOptions);
+    const allowed = allPermissions.filter((p) => {
+      const prefix = codePrefix(p.code);
+      return Boolean(prefix && prefixes.has(prefix));
+    });
     setCurrentRole(record);
-    setCheckedKeys(record.permissions.map((p) => p.id));
+    setPermTree(buildPermTree(allowed));
+    const allowedIds = new Set(allowed.map((p) => p.id));
+    const existing = record.permissions.map((p) => p.id).filter((id) => allowedIds.has(id));
+    setCheckedKeys(existing.length ? existing : allowed.map((p) => p.id));
     setPermModalOpen(true);
   };
 
   const handleAssign = async () => {
     if (!currentRole) return;
-    const permissionIds = checkedKeys.filter((k) => typeof k === 'number') as number[];
-    await assignRolePermissions(currentRole.id, permissionIds);
-    toast.success('权限分配成功');
+    const permissionIds = checkedKeys.filter((k) => typeof k === 'number');
+    const saved = await assignRolePermissions(currentRole.id, permissionIds);
+    toast.success(
+      permissionIds.length ? '权限分配成功' : '未勾选权限，已默认授予所选菜单栏目下全部权限',
+    );
     setPermModalOpen(false);
+    loadData();
+    void saved;
+  };
+
+  const openAssignMenus = (record: RoleItem) => {
+    setCurrentRole(record);
+    menuHalfCheckedRef.current = [];
+    if (record.menuRestricted) {
+      setMenuCheckedKeys((record.menus ?? []).map((m) => m.id));
+    } else {
+      const codes = new Set(record.permissions.map((p) => p.code));
+      setMenuCheckedKeys(
+        menuOptions
+          .filter((item) => !item.permissionCode || codes.has(item.permissionCode))
+          .map((item) => item.id),
+      );
+    }
+    setMenuModalOpen(true);
+  };
+
+  const handleAssignMenus = async () => {
+    if (!currentRole) return;
+    await assignRoleMenus(currentRole.id, [...new Set([...menuCheckedKeys, ...menuHalfCheckedRef.current])]);
+    toast.success('菜单已保存，未单独勾选的栏目已默认授予全部权限');
+    setMenuModalOpen(false);
     loadData();
   };
 
@@ -125,34 +225,55 @@ export default function RoleListPage() {
           { title: '名称', dataIndex: 'name' },
           { title: '描述', dataIndex: 'description' },
           {
+            title: '菜单',
+            width: 90,
+            render: (_, r) => (r.menuRestricted ? r.menus?.length ?? 0 : '未分配'),
+          },
+          {
             title: '权限数',
+            width: 90,
             render: (_, r) => r.permissions.length,
           },
           {
             title: '操作',
-            width: 220,
-            render: (_, record) => (
-              <>
-                <AuthButton type="link" permission="role:update" onClick={() => openEdit(record)}>
-                  编辑
-                </AuthButton>
-                <AuthButton type="link" permission="role:assign-permission" onClick={() => openAssign(record)}>
-                  分配权限
-                </AuthButton>
-                <AuthButton
-                  type="link"
-                  danger
-                  permission="role:delete"
-                  onClick={async () => {
-                    await deleteRole(record.id);
-                    toast.success('删除成功');
-                    loadData();
-                  }}
-                >
-                  删除
-                </AuthButton>
-              </>
-            ),
+            width: 300,
+            render: (_, record) => {
+              const canAssignPerm = Boolean(record.menuRestricted);
+              return (
+                <>
+                  <AuthButton type="link" permission="role:update" onClick={() => openEdit(record)}>
+                    编辑
+                  </AuthButton>
+                  <AuthButton type="link" permission="role:assign-permission" onClick={() => openAssignMenus(record)}>
+                    分配菜单
+                  </AuthButton>
+                  <Tooltip title={canAssignPerm ? undefined : '请先分配菜单'}>
+                    <span>
+                      <AuthButton
+                        type="link"
+                        permission="role:assign-permission"
+                        disabled={!canAssignPerm}
+                        onClick={() => openAssign(record)}
+                      >
+                        分配权限
+                      </AuthButton>
+                    </span>
+                  </Tooltip>
+                  <AuthButton
+                    type="link"
+                    danger
+                    permission="role:delete"
+                    onClick={async () => {
+                      await deleteRole(record.id);
+                      toast.success('删除成功');
+                      loadData();
+                    }}
+                  >
+                    删除
+                  </AuthButton>
+                </>
+              );
+            },
           },
         ]}
       />
@@ -171,17 +292,61 @@ export default function RoleListPage() {
         </Form>
       </Modal>
 
-      <Modal title="分配权限" open={permModalOpen} onOk={handleAssign} onCancel={() => setPermModalOpen(false)} width={520}>
+      <Modal
+        title="分配权限"
+        open={permModalOpen}
+        onOk={handleAssign}
+        onCancel={() => setPermModalOpen(false)}
+        width={520}
+        styles={{ body: { maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' } }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          仅显示已分配菜单栏目下的接口权限。不勾选任何项时，默认授予这些栏目的全部权限。
+        </Typography.Paragraph>
+        {permTree.length ? (
+          <Tree
+            checkable
+            defaultExpandAll
+            treeData={permTree}
+            key={currentRole ? `perm-${currentRole.id}` : 'perm'}
+            checkedKeys={checkedKeys}
+            onCheck={(keys) => {
+              const list = (Array.isArray(keys) ? keys : keys.checked).filter(
+                (k): k is number => typeof k === 'number' && leafKeys.includes(k),
+              );
+              setCheckedKeys(list);
+            }}
+          />
+        ) : (
+          <Typography.Text type="secondary">所选菜单没有对应的接口权限。</Typography.Text>
+        )}
+      </Modal>
+
+      <Modal
+        title="分配菜单"
+        open={menuModalOpen}
+        onOk={handleAssignMenus}
+        onCancel={() => setMenuModalOpen(false)}
+        width={560}
+        styles={{ body: { maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' } }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          请先勾选侧栏可见菜单。保存后会默认授予这些栏目下的全部接口权限，可再通过「分配权限」微调。用户需重新登录或刷新后生效。
+        </Typography.Paragraph>
         <Tree
           checkable
           defaultExpandAll
-          treeData={permTree}
-          checkedKeys={checkedKeys}
-          onCheck={(keys) => {
+          treeData={menuTree}
+          key={currentRole ? `menu-${currentRole.id}-${menuModalOpen}` : 'menu'}
+          checkedKeys={menuCheckedKeys}
+          onCheck={(keys, info) => {
             const list = (Array.isArray(keys) ? keys : keys.checked).filter(
-              (k): k is number => typeof k === 'number' && leafKeys.includes(k),
+              (k): k is number => typeof k === 'number',
             );
-            setCheckedKeys(list);
+            menuHalfCheckedRef.current = (info.halfCheckedKeys ?? []).filter(
+              (k): k is number => typeof k === 'number',
+            );
+            setMenuCheckedKeys(list);
           }}
         />
       </Modal>

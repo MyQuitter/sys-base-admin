@@ -14,6 +14,7 @@ import { useMenuStore } from '@/stores/useMenuStore';
 import { useTabStore } from '@/stores/useTabStore';
 import { useSiteStore } from '@/stores/useSiteStore';
 import { withCacheBust } from '@/utils/branding';
+import { resolveLandingPath } from '@/utils/menu';
 import { connectWallet, ensureWalletChain, shortenAddress, signMessage } from '@/utils/wallet';
 import './login.css';
 
@@ -156,8 +157,9 @@ async function finishLogin(
   deps.setAuth(accessToken, userInfo);
   deps.resetTabs();
   await deps.fetchMenus();
+  const home = resolveLandingPath(useMenuStore.getState().menus);
   toast.success('登录成功');
-  deps.navigate('/dashboard', { replace: true });
+  deps.navigate(home, { replace: true });
 }
 
 /**
