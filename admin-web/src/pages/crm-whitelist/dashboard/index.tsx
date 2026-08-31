@@ -1,5 +1,6 @@
 import {
   BankOutlined,
+  CalendarOutlined,
   ClockCircleOutlined,
   DollarOutlined,
   FundOutlined,
@@ -11,10 +12,12 @@ import {
   TransactionOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Col, Empty, Modal, Row, Spin, Tag, Typography } from 'antd';
+import { Button, Card, Col, Empty, Modal, Progress, Row, Spin, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -32,6 +35,7 @@ import { getCrmWlConfig, getCrmWlDashboard, type CrmWlDashboardStats } from '@/a
 import { AuthButton } from '@/components/AuthButton';
 import { toast } from '@/utils/toast';
 import { writeEnableTrading, writeRollObservations, verifyTokenOwner } from '@/utils/crm-whitelist-wallet';
+import { PriceKlineCard } from './PriceKlineCard';
 import './dashboard.css';
 
 const AMOUNT_DECIMALS = 18;
@@ -40,10 +44,16 @@ const PIE_COLORS = ['#1677ff', '#0d9488', '#d97706', '#6366f1', '#0891b2', '#e11
 function fmtUsd(v?: string, decimals = AMOUNT_DECIMALS) {
   if (!v) return '0';
   try {
-    const [intPart, frac = ''] = formatUnits(BigInt(v), decimals).split('.');
-    const grouped = BigInt(intPart).toLocaleString('zh-CN');
-    const trimmed = frac.replace(/0+$/, '').slice(0, 4);
-    return trimmed ? `${grouped}.${trimmed}` : grouped;
+    const x = BigInt(String(v).split('.')[0]);
+    const fracDigits = 4n;
+    const q = 10n ** (BigInt(decimals) - fracDigits);
+    const rounded = (x + q / 2n) / q;
+    const scale = 10n ** fracDigits;
+    const intPart = rounded / scale;
+    const fracPart = rounded % scale;
+    const grouped = intPart.toLocaleString('zh-CN');
+    const fracStr = fracPart.toString().padStart(Number(fracDigits), '0').replace(/0+$/, '');
+    return fracStr ? `${grouped}.${fracStr}` : grouped;
   } catch {
     return v;
   }
@@ -63,6 +73,28 @@ function fmtTs(v?: string) {
   const n = Number(v);
   if (!Number.isFinite(n)) return v;
   return new Date(n * 1000).toLocaleString('zh-CN');
+}
+
+function dailyJoinPercent(stats: CrmWlDashboardStats) {
+  if (stats.dailyJoinUnlimited) return 0;
+  try {
+    const cap = BigInt(stats.dailyJoinCapUsd || '0');
+    if (cap <= 0n) return 0;
+    const used = BigInt(stats.dailyJoinedUsdToday || '0');
+    const pct = Number((used * 10000n) / cap) / 100;
+    return Math.min(100, Math.max(0, pct));
+  } catch {
+    return 0;
+  }
+}
+
+function usdToNumber(v?: string, decimals = AMOUNT_DECIMALS) {
+  if (!v) return 0;
+  try {
+    return Number(formatUnits(BigInt(String(v).split('.')[0]), decimals));
+  } catch {
+    return 0;
+  }
 }
 
 function fmtPrice(v?: string) {
@@ -217,14 +249,21 @@ export default function CrmWlDashboardPage() {
     [stats],
   );
 
-  const scaleData = useMemo(() => {
-    if (!stats) return [];
-    return [
-      { name: '团队会员', count: stats.memberCount },
-      { name: '交易白名单', count: stats.traderCount },
-      { name: '节点白名单', count: stats.nodeCount },
-    ];
-  }, [stats]);
+  const dailyJoinData = useMemo(
+    () =>
+      (stats?.dailyJoins ?? []).map((d) => {
+        const usdNum = usdToNumber(d.usd);
+        return {
+          date: d.date.slice(5),
+          fullDate: d.date,
+          usd: Number.isFinite(usdNum) ? usdNum : 0,
+          usdLabel: fmtUsd(d.usd),
+          bnbLabel: fmtUsd(d.bnb),
+          count: d.count,
+        };
+      }),
+    [stats],
+  );
 
   return (
     <div className="crm-dash">
@@ -268,6 +307,7 @@ export default function CrmWlDashboardPage() {
             <span className={`crm-dash-pill ${stats.priceReady ? 'is-on' : 'is-warn'}`}>
               TWAP {stats.priceReady ? '就绪' : '未就绪'}
             </span>
+            <span className="crm-dash-pill is-on">UTC+8 {stats.utc8Date}</span>
           </div>
         )}
       </div>
@@ -286,9 +326,10 @@ export default function CrmWlDashboardPage() {
                 <Col xs={24} sm={12} xl={6}>
                   <MetricCard
                     label="总业绩 (USD)"
-                    value={fmtUsd(stats.totalQuotaUsd)}
+                    value={fmtUsd(stats.totalParticipationUsd)}
                     icon={<DollarOutlined />}
                     tone="blue"
+                    foot="入金折 U，不含档位系数"
                   />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
@@ -333,6 +374,65 @@ export default function CrmWlDashboardPage() {
                     icon={<UserOutlined />}
                     tone="green"
                     foot={`待补扣出局 ${fmtInt(stats.pendingExitCount)}`}
+                  />
+                </Col>
+              </Row>
+            </section>
+
+            <section className="crm-dash-section">
+              <div className="crm-dash-section-head">
+                <h3 className="crm-dash-section-title">UTC+8 自然日</h3>
+                <span className="crm-dash-section-hint">
+                  {stats.utc8Date} · 日切 00:00（UTC+8），与合约每日入金上限口径一致
+                </span>
+              </div>
+              <Row gutter={[14, 14]}>
+                <Col xs={24} sm={12} xl={6}>
+                  <MetricCard
+                    label="当日日期"
+                    value={stats.utc8Date}
+                    icon={<CalendarOutlined />}
+                    tone="slate"
+                    valueClassName="is-sm"
+                    foot="00:00–24:00 UTC+8"
+                  />
+                </Col>
+                <Col xs={24} sm={12} xl={6}>
+                  <MetricCard
+                    label="当日入金上限 (USD)"
+                    value={stats.dailyJoinUnlimited ? '不限制' : fmtUsd(stats.dailyJoinCapUsd)}
+                    icon={<ThunderboltOutlined />}
+                    tone="amber"
+                    foot={stats.dailyJoinUnlimited ? '合约 dailyJoinCapUsd = 0' : '全网当日累计折 U'}
+                  />
+                </Col>
+                <Col xs={24} sm={12} xl={6}>
+                  <MetricCard
+                    label="当日已入金 (USD)"
+                    value={fmtUsd(stats.dailyJoinedUsdToday)}
+                    icon={<DollarOutlined />}
+                    tone="blue"
+                    foot="跨日后自动归零"
+                  />
+                </Col>
+                <Col xs={24} sm={12} xl={6}>
+                  <MetricCard
+                    label="当日剩余 (USD)"
+                    value={stats.dailyJoinUnlimited ? '不限制' : fmtUsd(stats.dailyJoinRemainingUsd)}
+                    icon={<FundOutlined />}
+                    tone="green"
+                    foot={
+                      stats.dailyJoinUnlimited ? (
+                        '未设上限'
+                      ) : (
+                        <Progress
+                          percent={dailyJoinPercent(stats)}
+                          size="small"
+                          showInfo
+                          format={(p) => `已用 ${p ?? 0}%`}
+                        />
+                      )
+                    }
                   />
                 </Col>
               </Row>
@@ -399,21 +499,73 @@ export default function CrmWlDashboardPage() {
 
             <section className="crm-dash-section">
               <div className="crm-dash-section-head">
-                <h3 className="crm-dash-section-title">分布与快照</h3>
+                <h3 className="crm-dash-section-title">每日入金与分布</h3>
               </div>
               <Row gutter={[14, 14]}>
                 <Col xs={24} lg={12}>
-                  <Card title="规模对比" className="crm-dash-panel" variant="borderless">
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={scaleData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef1f5" />
-                        <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <YAxis allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="count" name="数量" radius={[8, 8, 0, 0]} fill="#1677ff" maxBarSize={48} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <Card
+                    title="每日入金"
+                    className="crm-dash-panel"
+                    variant="borderless"
+                    extra={
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        近 30 日 · UTC+8 · 折 U，不含档位系数
+                      </Typography.Text>
+                    }
+                  >
+                    {dailyJoinData.length ? (
+                      <ResponsiveContainer width="100%" height={280}>
+                        <AreaChart data={dailyJoinData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="crmDailyJoinFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#1677ff" stopOpacity={0.28} />
+                              <stop offset="100%" stopColor="#1677ff" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef1f5" />
+                          <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
+                          <YAxis
+                            tick={{ fill: '#6b7280', fontSize: 12 }}
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(v: number) =>
+                              v >= 1000 ? `${Math.round(v).toLocaleString('zh-CN')}` : v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+                            }
+                          />
+                          <Tooltip
+                            content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null;
+                              const row = payload[0].payload as (typeof dailyJoinData)[number];
+                              return (
+                                <div className="crm-dash-chart-tip">
+                                  <div className="crm-dash-chart-tip-date">{row.fullDate}</div>
+                                  <div>
+                                    {row.usdLabel} U / {row.bnbLabel} BNB
+                                  </div>
+                                  <div>{row.count} 笔</div>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="usd"
+                            name="入金折 U"
+                            stroke="#1677ff"
+                            strokeWidth={2}
+                            fill="url(#crmDailyJoinFill)"
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <Empty description="暂无入金记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    )}
                   </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <PriceKlineCard />
                 </Col>
                 <Col xs={24} lg={12}>
                   <Card title="层级深度分布" className="crm-dash-panel" variant="borderless">
@@ -482,8 +634,8 @@ export default function CrmWlDashboardPage() {
                         <div className="crm-dash-metric-value is-sm">{fmtUsd(stats.indexedQuotaUsdSum)}</div>
                       </div>
                       <div className="crm-dash-snapshot-item">
-                        <div className="crm-dash-metric-label">链上总配额</div>
-                        <div className="crm-dash-metric-value is-sm">{fmtUsd(stats.totalQuota)}</div>
+                        <div className="crm-dash-metric-label">链上总额度</div>
+                        <div className="crm-dash-metric-value is-sm">{fmtUsd(stats.totalQuotaUsd)}</div>
                       </div>
                       <div className="crm-dash-snapshot-item">
                         <div className="crm-dash-metric-label">待补扣出局</div>
@@ -491,7 +643,7 @@ export default function CrmWlDashboardPage() {
                       </div>
                     </div>
                     <Typography.Paragraph className="crm-dash-note">
-                      库内合计依赖「刷新业绩」快照；总业绩以链上 totalQuotaUsd 为准。开盘状态见顶部标签。
+                      总业绩为入金事件 ParticipationAdded 的折 U 合计（与链上笔数对齐时），不含 2.0×/2.2×/2.5× 档位。额度见右侧「链上总额度」。
                     </Typography.Paragraph>
                   </Card>
                 </Col>

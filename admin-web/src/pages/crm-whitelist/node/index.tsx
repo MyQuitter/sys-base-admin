@@ -59,6 +59,7 @@ export default function CrmWlNodePage() {
         businessAddress: cfg.businessAddress,
         account: address,
         level,
+        uncapped: false,
       });
       toast.success(`交易已提交：${hash.slice(0, 10)}...`);
       try {

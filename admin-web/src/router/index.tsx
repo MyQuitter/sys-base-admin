@@ -16,6 +16,7 @@ const CrmWlConfigPage = lazy(() => import('@/pages/crm-whitelist/config'));
 const CrmWlTraderPage = lazy(() => import('@/pages/crm-whitelist/trader'));
 const CrmWlNodePage = lazy(() => import('@/pages/crm-whitelist/node'));
 const CrmTeamPage = lazy(() => import('@/pages/crm-whitelist/team'));
+const CrmWlJoinsPage = lazy(() => import('@/pages/crm-whitelist/joins'));
 const CrmWlDashboardPage = lazy(() => import('@/pages/crm-whitelist/dashboard'));
 const UserListPage = lazy(() => import('@/pages/system/user'));
 const RoleListPage = lazy(() => import('@/pages/system/role'));
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
           { path: 'crm-whitelist/config', element: suspense(<CrmWlConfigPage />) },
           { path: 'crm-whitelist/trader', element: suspense(<CrmWlTraderPage />) },
           { path: 'crm-whitelist/node', element: suspense(<CrmWlNodePage />) },
+          { path: 'crm-whitelist/joins', element: suspense(<CrmWlJoinsPage />) },
           { path: 'crm-whitelist/team', element: suspense(<CrmTeamPage />) },
           // 兼容旧菜单 path，避免点进 /crm-whitelist/dashboard 被通配打回首页
           { path: 'crm-whitelist/dashboard', element: <Navigate to="/crm-whitelist/panel" replace /> },

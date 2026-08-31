@@ -45,3 +45,29 @@ CREATE TABLE IF NOT EXISTS `crm_wl_node` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `UQ_crm_wl_node_address` (`address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `crm_wl_join` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `address` varchar(64) NOT NULL,
+  `participation_id` varchar(32) NOT NULL,
+  `bnb_amount` decimal(36,0) NOT NULL DEFAULT 0,
+  `participation_usd` decimal(36,0) NOT NULL DEFAULT 0,
+  `quota_usd` decimal(36,0) NOT NULL DEFAULT 0,
+  `block_number` bigint NOT NULL DEFAULT 0,
+  `tx_hash` varchar(88) DEFAULT NULL,
+  `log_index` int NOT NULL DEFAULT 0,
+  `event_at` datetime DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `deleted_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `UQ_crm_wl_join_participation` (`participation_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE `crm_wl_config`
+  ADD COLUMN `join_synced_block` bigint NOT NULL DEFAULT 0;
+
+ALTER TABLE `crm_team_member`
+  ADD COLUMN `own_bnb` decimal(36,0) NOT NULL DEFAULT 0,
+  ADD COLUMN `direct_bnb` decimal(36,0) NOT NULL DEFAULT 0,
+  ADD COLUMN `team_bnb` decimal(36,0) NOT NULL DEFAULT 0;

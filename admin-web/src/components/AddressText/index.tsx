@@ -3,6 +3,26 @@ import { Space, Typography } from 'antd';
 import type { MouseEvent } from 'react';
 
 import { toast } from '@/utils/toast';
+
+/** HTTP / 非安全上下文没有 clipboard API，回退到 execCommand */
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.setAttribute('readonly', '');
+  el.style.position = 'fixed';
+  el.style.left = '-9999px';
+  document.body.appendChild(el);
+  el.select();
+  el.setSelectionRange(0, el.value.length);
+  const ok = document.execCommand('copy');
+  document.body.removeChild(el);
+  if (!ok) throw new Error('copy failed');
+}
+
 /** 0x0437***E72e39 */
 export function maskAddress(address?: string | null) {
   if (!address) return '-';
@@ -22,7 +42,7 @@ export function AddressText({
   const onCopy = async (e: MouseEvent) => {
     e.stopPropagation();
     try {
-      await navigator.clipboard.writeText(address);
+      await copyText(address);
       toast.success(successMessage);
     } catch {
       toast.error('复制失败');

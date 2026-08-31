@@ -6,6 +6,7 @@ import { BusinessException } from '../../../common/exceptions/business.exception
 import { UpdateCrmWlConfigDto } from '../dto/crm-wl.dto';
 import { CrmTeamMember } from '../entities/crm-team-member.entity';
 import { CrmWlConfig } from '../entities/crm-wl-config.entity';
+import { CrmWlJoin } from '../entities/crm-wl-join.entity';
 import { CrmWlNode } from '../entities/crm-wl-node.entity';
 import { CrmWlTrader } from '../entities/crm-wl-trader.entity';
 
@@ -20,6 +21,8 @@ export class CrmWlConfigService {
     private readonly nodeRepository: Repository<CrmWlNode>,
     @InjectRepository(CrmTeamMember)
     private readonly teamRepository: Repository<CrmTeamMember>,
+    @InjectRepository(CrmWlJoin)
+    private readonly joinRepository: Repository<CrmWlJoin>,
   ) {}
 
   private toVo(row: CrmWlConfig) {
@@ -35,6 +38,7 @@ export class CrmWlConfigService {
       traderSyncedBlock: row.traderSyncedBlock,
       nodeSyncedBlock: row.nodeSyncedBlock,
       relationSyncedBlock: row.relationSyncedBlock,
+      joinSyncedBlock: row.joinSyncedBlock,
       updatedAt: row.updatedAt,
     };
   }
@@ -58,6 +62,7 @@ export class CrmWlConfigService {
         traderSyncedBlock: '0',
         nodeSyncedBlock: '0',
         relationSyncedBlock: '0',
+        joinSyncedBlock: '0',
         updatedAt: null as Date | null,
       };
     }
@@ -80,11 +85,13 @@ export class CrmWlConfigService {
     row.traderSyncedBlock = traderStart > 0n ? (traderStart - 1n).toString() : '0';
     row.nodeSyncedBlock = nodeStart > 0n ? (nodeStart - 1n).toString() : '0';
     row.relationSyncedBlock = relationStart > 0n ? (relationStart - 1n).toString() : '0';
+    row.joinSyncedBlock = relationStart > 0n ? (relationStart - 1n).toString() : '0';
 
     await Promise.all([
       this.traderRepository.createQueryBuilder().delete().execute(),
       this.nodeRepository.createQueryBuilder().delete().execute(),
       this.teamRepository.createQueryBuilder().delete().execute(),
+      this.joinRepository.createQueryBuilder().delete().execute(),
     ]);
   }
 
@@ -102,6 +109,7 @@ export class CrmWlConfigService {
         traderSyncedBlock: '0',
         nodeSyncedBlock: '0',
         relationSyncedBlock: '0',
+        joinSyncedBlock: '0',
       });
     }
 
@@ -142,12 +150,23 @@ export class CrmWlConfigService {
     return { ...this.toVo(saved), resetIndexed: shouldReset };
   }
 
-  async saveSynced(kind: 'trader' | 'node' | 'relation', block: bigint) {
+  async saveSynced(kind: 'trader' | 'node' | 'relation' | 'join', block: bigint) {
     const row = await this.findOneRow();
     if (!row) throw new NotFoundException('配置不存在');
     if (kind === 'trader') row.traderSyncedBlock = block.toString();
     else if (kind === 'node') row.nodeSyncedBlock = block.toString();
+    else if (kind === 'join') row.joinSyncedBlock = block.toString();
     else row.relationSyncedBlock = block.toString();
     await this.configRepository.save(row);
+  }
+
+  /** 仅当新块更高时前移游标，避免实时推送把历史扫块位置回拨。 */
+  async saveSyncedIfAhead(kind: 'relation' | 'join', block: bigint) {
+    const row = await this.findOneRow();
+    if (!row) return;
+    const current = BigInt(kind === 'join' ? row.joinSyncedBlock || '0' : row.relationSyncedBlock || '0');
+    if (block > current) {
+      await this.saveSynced(kind, block);
+    }
   }
 }

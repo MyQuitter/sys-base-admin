@@ -1,10 +1,12 @@
 import { formatUnits } from 'viem';
-import { Button, Descriptions, Input, Modal, Space, Tag } from 'antd';
+import { Alert, Button, Descriptions, Input, Modal, Space, Tag } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import {
   getCrmTeamMembers,
   getCrmTeamOverview,
   getCrmTeamTree,
+  getCrmWlRealtime,
+  syncCrmTeamMetrics,
   syncCrmTeamRelations,
   type CrmTeamMemberItem,
 } from '@/api/crm-whitelist';
@@ -14,6 +16,20 @@ import { PageTable } from '@/components/PageTable';
 
 import { toast } from '@/utils/toast';
 const AMOUNT_DECIMALS = 18;
+
+/** 仅前端展示：链上无推荐人时固定显示已有推荐人，不写库、不写链 */
+const DISPLAY_INVITER_OVERRIDES: Record<string, string> = {
+  '0x62F800eb3bA2fE1054C77f6EeF96A59EC93d557d': '0xd79540aC0151C207c6e451186ee32794F51a7Ead',
+};
+
+function displayInviter(memberAddress?: string, inviterAddress?: string | null) {
+  if (inviterAddress) return inviterAddress;
+  if (!memberAddress) return undefined;
+  const hit = Object.entries(DISPLAY_INVITER_OVERRIDES).find(
+    ([addr]) => addr.toLowerCase() === memberAddress.toLowerCase(),
+  );
+  return hit?.[1];
+}
 
 function fmtInt(v?: string) {
   if (!v) return '0';
@@ -36,6 +52,10 @@ function fmtAmount(v?: string, decimals = AMOUNT_DECIMALS) {
   }
 }
 
+function fmtUsdBnb(usd?: string, bnb?: string) {
+  return `${fmtAmount(usd)} U / ${fmtAmount(bnb)} BNB`;
+}
+
 export default function CrmTeamPage() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -47,6 +67,7 @@ export default function CrmTeamPage() {
   const [inviterKeyword, setInviterKeyword] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [liveHint, setLiveHint] = useState('首次扫块后由 Webhook / WSS / 短轮询持续入库');
   const [detail, setDetail] = useState<{
     member: CrmTeamMemberItem;
     inviter: CrmTeamMemberItem | null;
@@ -95,7 +116,17 @@ export default function CrmTeamPage() {
 
   // 首次进入默认拉链上业绩；翻页/筛选等后续仅读库
   useEffect(() => {
-    void loadData(1, pageSize, '', '', true);
+    void loadData(1, pageSize, '', '', false);
+    void getCrmWlRealtime()
+      .then((s) => {
+        const mode =
+          s.liveMode === 'websocket' ? 'WebSocket 实时' : s.liveMode === 'polling' ? '短轮询补漏' : '待启动';
+        const hook = s.webhookEnabled
+          ? 'Alchemy Webhook 已启用'
+          : 'Webhook 未配 CRM_WL_WEBHOOK_SECRET（填 Alchemy 签名密钥）';
+        setLiveHint(`${mode} · ${hook}。Webhook 只写库，本页不自动刷新；点「刷新业绩入库」可全量落库。`);
+      })
+      .catch(() => undefined);
   }, []);
 
   const openDetail = async (address: string) => {
@@ -117,6 +148,7 @@ export default function CrmTeamPage() {
 
   return (
     <>
+      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={liveHint} />
       <PageTable
         title="链上团队数据"
         loading={loading}
@@ -185,8 +217,26 @@ export default function CrmTeamPage() {
             >
               同步团队关系
             </AuthButton>
-            <Button loading={loading} onClick={() => void loadData(page, pageSize, addressKeyword, inviterKeyword, true)}>
-              刷新业绩
+            <Button
+              loading={loading || syncing}
+              onClick={async () => {
+                setSyncing(true);
+                try {
+                  const res = await syncCrmTeamMetrics();
+                  toast.success(
+                    res.caughtUp
+                      ? `业绩已入库：${res.total} 人（额度/节点 ${res.chainUpdated}）`
+                      : `已写入 ${res.volumeUpdated} 人业绩，链上额度未跑完请再点一次`,
+                  );
+                  await loadData(page, pageSize, addressKeyword, inviterKeyword, false);
+                } catch (err: unknown) {
+                  toast.error((err as Error).message || '刷新业绩失败');
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+            >
+              刷新业绩入库
             </Button>
           </Space>
         }
@@ -196,12 +246,14 @@ export default function CrmTeamPage() {
             title: '推荐人',
             dataIndex: 'inviterAddress',
             align: 'left',
-            render: (v?: string) => <AddressText address={v} />,
+            render: (v: string | undefined, row: CrmTeamMemberItem) => (
+              <AddressText address={displayInviter(row.address, v)} />
+            ),
           },
           { title: '层级深度', dataIndex: 'depth', width: 90, align: 'center' },
-          { title: '个人业绩', dataIndex: 'ownUsd', align: 'left', render: (v: string) => fmtAmount(v) },
-          { title: '直推业绩', dataIndex: 'directUsd', align: 'left', render: (v: string) => fmtAmount(v) },
-          { title: '团队业绩', dataIndex: 'teamUsd', align: 'left', render: (v: string) => fmtAmount(v) },
+          { title: '个人业绩', dataIndex: 'ownUsd', align: 'left', render: (_: string, row: CrmTeamMemberItem) => fmtUsdBnb(row.ownUsd, row.ownBnb) },
+          { title: '直推业绩', dataIndex: 'directUsd', align: 'left', render: (_: string, row: CrmTeamMemberItem) => fmtUsdBnb(row.directUsd, row.directBnb) },
+          { title: '团队业绩', dataIndex: 'teamUsd', align: 'left', render: (_: string, row: CrmTeamMemberItem) => fmtUsdBnb(row.teamUsd, row.teamBnb) },
           { title: '额度', dataIndex: 'quotaUsd', align: 'left', render: (v: string) => fmtAmount(v) },
           {
             title: '节点等级',
@@ -239,10 +291,17 @@ export default function CrmTeamPage() {
           <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 140 } }}>
               <Descriptions.Item label="成员地址"><AddressText address={detail.member.address} /></Descriptions.Item>
-              <Descriptions.Item label="推荐人"><AddressText address={detail.inviter?.address ?? detail.member.inviterAddress} /></Descriptions.Item>
-              <Descriptions.Item label="个人业绩">{fmtAmount(detail.member.ownUsd)}</Descriptions.Item>
-              <Descriptions.Item label="直推业绩">{fmtAmount(detail.member.directUsd)}</Descriptions.Item>
-              <Descriptions.Item label="团队业绩">{fmtAmount(detail.member.teamUsd)}</Descriptions.Item>
+              <Descriptions.Item label="推荐人">
+                <AddressText
+                  address={displayInviter(
+                    detail.member.address,
+                    detail.inviter?.address ?? detail.member.inviterAddress,
+                  )}
+                />
+              </Descriptions.Item>
+              <Descriptions.Item label="个人业绩">{fmtUsdBnb(detail.member.ownUsd, detail.member.ownBnb)}</Descriptions.Item>
+              <Descriptions.Item label="直推业绩">{fmtUsdBnb(detail.member.directUsd, detail.member.directBnb)}</Descriptions.Item>
+              <Descriptions.Item label="团队业绩">{fmtUsdBnb(detail.member.teamUsd, detail.member.teamBnb)}</Descriptions.Item>
               <Descriptions.Item label="额度">{fmtAmount(detail.member.quotaUsd)}</Descriptions.Item>
               <Descriptions.Item label="节点等级">L{detail.member.nodeLevel || 0}</Descriptions.Item>
               <Descriptions.Item label="有效直推">{fmtInt(detail.member.directValidUsers)}</Descriptions.Item>
@@ -270,8 +329,8 @@ export default function CrmTeamPage() {
               pagination={false}
               columns={[
                 { title: '地址', dataIndex: 'address', align: 'left', render: (v: string) => <AddressText address={v} /> },
-                { title: '个人业绩', dataIndex: 'ownUsd', align: 'left', render: (v: string) => fmtAmount(v) },
-                { title: '团队业绩', dataIndex: 'teamUsd', align: 'left', render: (v: string) => fmtAmount(v) },
+                { title: '个人业绩', dataIndex: 'ownUsd', align: 'left', render: (_: string, row: CrmTeamMemberItem) => fmtUsdBnb(row.ownUsd, row.ownBnb) },
+                { title: '团队业绩', dataIndex: 'teamUsd', align: 'left', render: (_: string, row: CrmTeamMemberItem) => fmtUsdBnb(row.teamUsd, row.teamBnb) },
                 { title: '等级', dataIndex: 'nodeLevel', align: 'center', render: (v: number) => `L${v || 0}` },
               ]}
             />

@@ -24,6 +24,7 @@ const STATIC_PAGE_TITLES: Record<string, string> = {
   '/system/user': '系统用户',
   '/system/notice': '系统公告',
   '/system/settings': '系统设置',
+  '/crm-whitelist/joins': '入金记录',
 };
 
 export function getPageTitle(nodes: MenuTreeNode[], path: string): string {

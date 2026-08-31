@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { decodeEventLog, getAddress, keccak256, toBytes, type AbiEvent, type Log } from 'viem';
+import { decodeEventLog, getAddress, keccak256, toBytes, type AbiEvent, type Log, type PublicClient } from 'viem';
 import { Like, Repository, type FindOperator } from 'typeorm';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { getPagination, toPageResult } from '../../../common/utils/pagination';
@@ -8,9 +8,12 @@ import { Chain } from '../../blockchain/entities/chain.entity';
 import { BlockchainRpcService } from '../../blockchain/services/blockchain-rpc.service';
 import { fetchLogsAdaptive, LogFetchDeadlineError } from '../../blockchain/utils/log-fetch';
 import { CRAM_BUSINESS_ABI, resolveTokenAbi } from '../abi/load-abi';
-import { QueryCrmTeamListDto } from '../dto/crm-wl.dto';
+import { QueryCrmTeamListDto, QueryCrmWlListDto } from '../dto/crm-wl.dto';
 import { CrmTeamMember } from '../entities/crm-team-member.entity';
+import { CrmWlJoin } from '../entities/crm-wl-join.entity';
 import { CrmWlConfigService } from './crm-wl-config.service';
+
+type VolumeStats = { own: bigint; direct: bigint; team: bigint; teamCount: number };
 
 @Injectable()
 export class CrmTeamService {
@@ -29,6 +32,9 @@ export class CrmTeamService {
   /** 付费 RPC 下 eth_getLogs 单次跨度；遇限流时由 fetchLogsAdaptive 自动缩小 */
   private readonly relationChunkSize = 50_000n;
   private readonly initialSyncMaxMs = 240_000;
+  private joinSyncing = false;
+  private metricSyncing = false;
+  private readonly blockTimeMs = new Map<string, number>();
 
   constructor(
     private readonly configService: CrmWlConfigService,
@@ -37,6 +43,8 @@ export class CrmTeamService {
     private readonly chainRepository: Repository<Chain>,
     @InjectRepository(CrmTeamMember)
     private readonly teamRepository: Repository<CrmTeamMember>,
+    @InjectRepository(CrmWlJoin)
+    private readonly joinRepository: Repository<CrmWlJoin>,
   ) {}
 
   private async resolveChain() {
@@ -108,6 +116,41 @@ export class CrmTeamService {
       refreshed.push(await this.teamRepository.save(row));
     }
     return refreshed;
+  }
+
+  /** 链上额度 / 节点 / 有效直推写入库，不覆盖入金汇总的个人/直推/团队业绩 */
+  private async refreshChainExtrasBatch(items: CrmTeamMember[], chain: Chain, contractAddress: string, latest: bigint) {
+    if (!items.length) return { updated: 0, failed: 0 };
+    const client = this.rpcService.getClient(chain);
+    const contract = getAddress(contractAddress);
+    const results = await client.multicall({
+      contracts: items.map((item) => ({
+        address: contract,
+        abi: CRAM_BUSINESS_ABI,
+        functionName: 'leaderOverview' as const,
+        args: [getAddress(item.address)] as const,
+      })),
+      allowFailure: true,
+    });
+    let updated = 0;
+    let failed = 0;
+    for (let i = 0; i < items.length; i++) {
+      const result = results[i];
+      if (result.status !== 'success') {
+        failed += 1;
+        continue;
+      }
+      const overview = result.result as [bigint, bigint, bigint, bigint, bigint, number, bigint];
+      const row = items[i];
+      row.directValidUsers = overview[0].toString();
+      row.quotaUsd = overview[4].toString();
+      row.nodeLevel = Number(overview[5]);
+      row.referralCrm = overview[6].toString();
+      row.lastMetricBlock = latest.toString();
+      await this.teamRepository.save(row);
+      updated += 1;
+    }
+    return { updated, failed };
   }
 
   private buildAddressFilter(keyword?: string): string | FindOperator<string> | undefined {
@@ -268,19 +311,68 @@ export class CrmTeamService {
     await this.applyBind(getAddress(args.user), getAddress(args.inviter), log);
   }
 
+  /**
+   * 将 ParticipationAdded 落成入金记录（按 participationId 幂等）。
+   */
+  private async upsertJoin(log: Log): Promise<{ address: string; deltaUsd: bigint; deltaBnb: bigint } | null> {
+    let decoded;
+    try {
+      decoded = decodeEventLog({
+        abi: CRAM_BUSINESS_ABI,
+        data: log.data,
+        topics: log.topics,
+      });
+    } catch {
+      return null;
+    }
+    if (decoded.eventName !== 'ParticipationAdded') return null;
+    const args = decoded.args as unknown as {
+      user: `0x${string}`;
+      participationId: bigint;
+      bnbAmount: bigint;
+      participationUsd: bigint;
+      quotaUsd: bigint;
+    };
+    const participationId = args.participationId.toString();
+    let row = await this.joinRepository.findOne({ where: { participationId } });
+    const existed = Boolean(row);
+    if (!row) {
+      row = this.joinRepository.create({ participationId });
+    }
+    const prevUsd = existed ? this.parseUsd(row.participationUsd) : 0n;
+    const prevBnb = existed ? this.parseUsd(row.bnbAmount) : 0n;
+    row.address = getAddress(args.user);
+    row.bnbAmount = args.bnbAmount.toString();
+    row.participationUsd = args.participationUsd.toString();
+    row.quotaUsd = args.quotaUsd.toString();
+    row.blockNumber = (log.blockNumber ?? 0n).toString();
+    row.txHash = log.transactionHash ?? null;
+    row.logIndex = Number(log.logIndex ?? 0);
+    row.eventAt = await this.resolveJoinEventAt(log);
+    await this.joinRepository.save(row);
+    await this.ensureMember(row.address);
+    return {
+      address: row.address,
+      deltaUsd: args.participationUsd - prevUsd,
+      deltaBnb: args.bnbAmount - prevBnb,
+    };
+  }
+
   private async applyJoinLog(log: Log, chain: Chain, rewardsModule: `0x${string}`) {
+    const client = this.rpcService.getClient(chain);
+    await this.rememberLogTimes(client, [log]);
+    const volumeDelta = await this.upsertJoin(log);
     const decoded = decodeEventLog({
       abi: CRAM_BUSINESS_ABI,
       data: log.data,
       topics: log.topics,
     });
-    if (decoded.eventName !== 'ParticipationAdded') return;
+    if (decoded.eventName !== 'ParticipationAdded') return volumeDelta;
     const args = decoded.args as unknown as { user: `0x${string}` };
     const address = getAddress(args.user);
     const row = await this.ensureMember(address);
-    if (row.inviterAddress) return;
+    if (row.inviterAddress) return volumeDelta;
 
-    const client = this.rpcService.getClient(chain);
     const referrer = getAddress(
       (await client.readContract({
         address: rewardsModule,
@@ -289,21 +381,109 @@ export class CrmTeamService {
         args: [address],
       })) as `0x${string}`,
     );
-    if (referrer === this.zeroAddress) return;
+    if (referrer === this.zeroAddress) return volumeDelta;
     await this.applyBind(address, referrer, log);
+    return volumeDelta;
   }
 
   private async applyTeamLog(log: Log, chain: Chain, rewardsModule: `0x${string}`) {
     const topic = (log.topics?.[0] || '').toLowerCase();
     if (topic === this.referralBoundTopic.toLowerCase()) {
       await this.applyRelationLog(log);
-      return 1;
+      return { processed: 1, join: 0, bind: 1, volumeDelta: null as { address: string; deltaUsd: bigint; deltaBnb: bigint } | null };
     }
     if (topic === this.joinOrderTopic.toLowerCase()) {
-      await this.applyJoinLog(log, chain, rewardsModule);
-      return 1;
+      const volumeDelta = await this.applyJoinLog(log, chain, rewardsModule);
+      return { processed: 1, join: 1, bind: 0, volumeDelta };
     }
-    return 0;
+    return { processed: 0, join: 0, bind: 0, volumeDelta: null as { address: string; deltaUsd: bigint; deltaBnb: bigint } | null };
+  }
+
+  /** Webhook/WSS 入金后只把业绩差额写回成员表，不驱动管理页 */
+  private async bumpJoinVolumes(address: string, deltaUsd: bigint, deltaBnb: bigint) {
+    if (deltaUsd === 0n && deltaBnb === 0n) return;
+    const user = await this.ensureMember(address);
+    user.ownUsd = (this.parseUsd(user.ownUsd) + deltaUsd).toString();
+    user.ownBnb = (this.parseUsd(user.ownBnb) + deltaBnb).toString();
+    await this.teamRepository.save(user);
+
+    if (user.inviterAddress) {
+      const parent = await this.teamRepository.findOne({ where: { address: user.inviterAddress } });
+      if (parent) {
+        parent.directUsd = (this.parseUsd(parent.directUsd) + deltaUsd).toString();
+        parent.teamUsd = (this.parseUsd(parent.teamUsd) + deltaUsd).toString();
+        parent.directBnb = (this.parseUsd(parent.directBnb) + deltaBnb).toString();
+        parent.teamBnb = (this.parseUsd(parent.teamBnb) + deltaBnb).toString();
+        await this.teamRepository.save(parent);
+      }
+    }
+
+    const skip = new Set<string>(user.inviterAddress ? [user.inviterAddress] : []);
+    const path = (user.ancestorPath || '').split('/').filter(Boolean);
+    for (const raw of path) {
+      let addr: string;
+      try {
+        addr = getAddress(raw);
+      } catch {
+        continue;
+      }
+      if (skip.has(addr)) continue;
+      skip.add(addr);
+      const anc = await this.teamRepository.findOne({ where: { address: addr } });
+      if (!anc) continue;
+      anc.teamUsd = (this.parseUsd(anc.teamUsd) + deltaUsd).toString();
+      anc.teamBnb = (this.parseUsd(anc.teamBnb) + deltaBnb).toString();
+      await this.teamRepository.save(anc);
+    }
+  }
+
+  /**
+   * 将链上日志写入入金表 / 团队关系（幂等）。供首次扫块之后的 Webhook / WSS / 轮询调用。
+   */
+  async ingestBusinessLogs(logs: Log[]) {
+    if (!logs.length) {
+      return { processed: 0, joins: 0, binds: 0 };
+    }
+    const { config, chain } = await this.resolveChain();
+    const rewardsModule = await this.resolveRewardsModule(
+      chain,
+      config.tokenAddress,
+      config.tokenAbiKey,
+      config.businessAddress,
+    );
+    const sorted = this.sortLogs(logs);
+    const client = this.rpcService.getClient(chain);
+    await this.rememberLogTimes(client, sorted);
+    let processed = 0;
+    let joins = 0;
+    let binds = 0;
+    let maxJoinBlock = 0n;
+    let maxBindBlock = 0n;
+    const joinDeltas: Array<{ address: string; deltaUsd: bigint; deltaBnb: bigint }> = [];
+    for (const log of sorted) {
+      if (log.address && getAddress(log.address) !== rewardsModule) continue;
+      const part = await this.applyTeamLog(log, chain, rewardsModule);
+      processed += part.processed;
+      joins += part.join;
+      binds += part.bind;
+      if (part.volumeDelta && (part.volumeDelta.deltaUsd !== 0n || part.volumeDelta.deltaBnb !== 0n)) {
+        joinDeltas.push(part.volumeDelta);
+      }
+      const bn = log.blockNumber ?? 0n;
+      if (part.join && bn > maxJoinBlock) maxJoinBlock = bn;
+      if (part.bind && bn > maxBindBlock) maxBindBlock = bn;
+    }
+    if (maxJoinBlock > 0n) await this.configService.saveSyncedIfAhead('join', maxJoinBlock);
+    if (maxBindBlock > 0n) await this.configService.saveSyncedIfAhead('relation', maxBindBlock);
+    if (binds > 0) await this.rebuildLayers();
+    if (binds > 0) {
+      await this.persistVolumesFromJoins();
+    } else {
+      for (const item of joinDeltas) {
+        await this.bumpJoinVolumes(item.address, item.deltaUsd, item.deltaBnb);
+      }
+    }
+    return { processed, joins, binds };
   }
 
   private sortLogs(logs: Log[]) {
@@ -313,6 +493,61 @@ export class CrmTeamService {
       const indexDelta = Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
       return indexDelta > 0n ? 1 : indexDelta < 0n ? -1 : 0;
     });
+  }
+
+  private logBlockTimestamp(log: Log): Date | null {
+    const raw = (log as Log & { blockTimestamp?: bigint | number | string }).blockTimestamp;
+    if (raw == null) return null;
+    const sec = Number(raw);
+    if (!Number.isFinite(sec) || sec <= 0) return null;
+    return new Date(sec * 1000);
+  }
+
+  private async rememberLogTimes(client: PublicClient, logs: Log[]) {
+    const missing: bigint[] = [];
+    const seen = new Set<string>();
+    for (const log of logs) {
+      const fromLog = this.logBlockTimestamp(log);
+      const bn = log.blockNumber;
+      if (bn == null) continue;
+      const key = bn.toString();
+      if (fromLog) {
+        this.blockTimeMs.set(key, fromLog.getTime());
+        continue;
+      }
+      if (this.blockTimeMs.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      missing.push(bn);
+    }
+    for (let i = 0; i < missing.length; i += 10) {
+      const chunk = missing.slice(i, i + 10);
+      const fetched = await Promise.all(
+        chunk.map(async (blockNumber) => {
+          try {
+            const block = await client.getBlock({ blockNumber });
+            return { key: blockNumber.toString(), ms: Number(block.timestamp) * 1000 };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const item of fetched) {
+        if (!item || !Number.isFinite(item.ms) || item.ms <= 0) continue;
+        this.blockTimeMs.set(item.key, item.ms);
+      }
+    }
+    if (this.blockTimeMs.size > 8000) this.blockTimeMs.clear();
+  }
+
+  private async resolveJoinEventAt(log: Log): Promise<Date> {
+    const fromLog = this.logBlockTimestamp(log);
+    if (fromLog) return fromLog;
+    const bn = log.blockNumber?.toString();
+    if (bn) {
+      const ms = this.blockTimeMs.get(bn);
+      if (ms != null) return new Date(ms);
+    }
+    return new Date();
   }
 
   private async scanTeamEventsByLogs(params: {
@@ -358,9 +593,10 @@ export class CrmTeamService {
       ),
     ]);
     const logs = this.sortLogs([...bound.logs, ...joins.logs]);
+    await this.rememberLogTimes(client, logs);
     let processed = 0;
     for (const log of logs) {
-      processed += await this.applyTeamLog(log, params.chain, rewardsModule);
+      processed += (await this.applyTeamLog(log, params.chain, rewardsModule)).processed;
     }
     return { processed, scannedTo: params.to };
   }
@@ -386,13 +622,14 @@ export class CrmTeamService {
 
     for (let blockNum = params.from; blockNum <= params.to; blockNum++) {
       const block = await client.getBlock({ blockNumber: blockNum, includeTransactions: true });
+      this.blockTimeMs.set(blockNum.toString(), Number(block.timestamp) * 1000);
       for (const tx of block.transactions) {
         if (typeof tx !== 'object' || !tx.to) continue;
         if (getAddress(tx.to) !== token) continue;
         const receipt = await client.getTransactionReceipt({ hash: tx.hash });
         for (const log of receipt.logs) {
           if (!log.address || getAddress(log.address) !== rewardsModule) continue;
-          processed += await this.applyTeamLog(log, params.chain, rewardsModule);
+          processed += (await this.applyTeamLog(log, params.chain, rewardsModule)).processed;
         }
       }
       scannedTo = blockNum;
@@ -466,6 +703,117 @@ export class CrmTeamService {
     return { syncedTo: scannedTo.toString(), processed, caughtUp: scannedTo >= latest };
   }
 
+  /**
+   * 只扫 ParticipationAdded，写入入金记录表。起始块与团队关系相同。
+   */
+  async syncJoins() {
+    if (this.joinSyncing) {
+      throw new BusinessException('同步进行中，请稍候再试', 'CRM_JOIN_SYNC_BUSY', HttpStatus.CONFLICT);
+    }
+    if (!this.joinOrderEvent) {
+      throw new BusinessException('Business ABI 缺少 ParticipationAdded', 'CRM_JOIN_EVENT_MISSING');
+    }
+    this.joinSyncing = true;
+    try {
+      return await this.syncJoinsUnlocked();
+    } finally {
+      this.joinSyncing = false;
+    }
+  }
+
+  private async syncJoinsUnlocked() {
+    const { config, chain } = await this.resolveChain();
+    const client = this.rpcService.getClient(chain);
+    const latest = await client.getBlockNumber();
+    const start = BigInt(config.relationStartBlock || '0');
+    let from = BigInt(config.joinSyncedBlock || '0');
+    const total = await this.joinRepository.count();
+    if (total === 0 && from > start) {
+      from = start > 0n ? start - 1n : 0n;
+    }
+    if (from < start) from = start > 0n ? start - 1n : 0n;
+    if (from > 0n) from = from + 1n;
+    if (from > latest) {
+      return { syncedTo: latest.toString(), processed: 0, caughtUp: true };
+    }
+
+    const rewardsModule = await this.resolveRewardsModule(
+      chain,
+      config.tokenAddress,
+      config.tokenAbiKey,
+      config.businessAddress,
+    );
+    const { client: logClient } = this.rpcService.getClientForLogs(chain);
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + this.initialSyncMaxMs;
+    let cursor = from;
+    let processed = 0;
+    let scannedTo = from > 0n ? from - 1n : 0n;
+
+    while (cursor <= latest) {
+      if (Date.now() >= deadlineAt) break;
+      const to = cursor + this.relationChunkSize - 1n > latest ? latest : cursor + this.relationChunkSize - 1n;
+      try {
+        const { logs } = await fetchLogsAdaptive(
+          (fromBlock, toBlock) =>
+            logClient.getLogs({
+              address: rewardsModule,
+              event: this.joinOrderEvent,
+              fromBlock,
+              toBlock,
+            }),
+          cursor,
+          to,
+          { deadlineAt },
+        );
+        const sorted = this.sortLogs(logs);
+        await this.rememberLogTimes(client, sorted);
+        for (const log of sorted) {
+          await this.upsertJoin(log);
+          processed += 1;
+        }
+        scannedTo = to;
+      } catch (err) {
+        if (err instanceof LogFetchDeadlineError) break;
+        throw new BusinessException(
+          `入金记录 getLogs 失败：${err instanceof Error ? err.message : String(err)}`,
+          'CRM_JOIN_SYNC_LOGS_FAILED',
+        );
+      }
+      await this.configService.saveSynced('join', scannedTo);
+      if (scannedTo >= latest) break;
+      cursor = scannedTo + 1n;
+    }
+
+    return { syncedTo: scannedTo.toString(), processed, caughtUp: scannedTo >= latest };
+  }
+
+  async listJoins(query: QueryCrmWlListDto) {
+    const { page, pageSize, skip } = getPagination(query);
+    const qb = this.joinRepository.createQueryBuilder('j').orderBy('j.id', 'DESC').skip(skip).take(pageSize);
+    if (query.address?.trim()) {
+      qb.andWhere('j.address LIKE :addr', { addr: `%${query.address.trim()}%` });
+    }
+    const [items, total] = await qb.getManyAndCount();
+    return toPageResult(
+      items.map((r) => ({
+        id: r.id,
+        address: r.address,
+        participationId: r.participationId,
+        bnbAmount: r.bnbAmount,
+        participationUsd: r.participationUsd,
+        quotaUsd: r.quotaUsd,
+        blockNumber: r.blockNumber,
+        txHash: r.txHash,
+        eventAt: r.eventAt,
+        updatedAt: r.updatedAt,
+      })),
+      total,
+      page,
+      pageSize,
+    );
+  }
+
   async listMembers(query: QueryCrmTeamListDto) {
     const { page, pageSize, skip } = getPagination(query);
     const where: Record<string, unknown> = {};
@@ -515,6 +863,9 @@ export class CrmTeamService {
       ownUsd: r.ownUsd,
       directUsd: r.directUsd,
       teamUsd: r.teamUsd,
+      ownBnb: r.ownBnb ?? '0',
+      directBnb: r.directBnb ?? '0',
+      teamBnb: r.teamBnb ?? '0',
       quotaUsd: r.quotaUsd,
       nodeLevel: r.nodeLevel,
       referralCrm: r.referralCrm,
@@ -535,6 +886,9 @@ export class CrmTeamService {
       ownUsd: '0',
       directUsd: '0',
       teamUsd: '0',
+      ownBnb: '0',
+      directBnb: '0',
+      teamBnb: '0',
       quotaUsd: '0',
       nodeLevel: 0,
       referralCrm: '0',
@@ -658,6 +1012,253 @@ export class CrmTeamService {
       member: memberVo,
       inviter: inviterVo,
       children: children.map((x) => this.toMemberVo(x)),
+    };
+  }
+
+  private parseUsd(v?: string | null) {
+    if (!v) return 0n;
+    try {
+      return BigInt(String(v).split('.')[0] || '0');
+    } catch {
+      return 0n;
+    }
+  }
+
+  private buildVolumeStats(people: CrmTeamMember[], ownMap: Map<string, bigint>) {
+    const children = new Map<string, string[]>();
+    for (const p of people) {
+      if (!p.inviterAddress) continue;
+      const list = children.get(p.inviterAddress) ?? [];
+      list.push(p.address);
+      children.set(p.inviterAddress, list);
+    }
+    const memo = new Map<string, VolumeStats>();
+    const visiting = new Set<string>();
+    const statsOf = (addr: string): VolumeStats => {
+      const cached = memo.get(addr);
+      if (cached) return cached;
+      if (visiting.has(addr)) {
+        return { own: ownMap.get(addr) ?? 0n, direct: 0n, team: 0n, teamCount: 0 };
+      }
+      visiting.add(addr);
+      const kids = children.get(addr) ?? [];
+      let direct = 0n;
+      let team = 0n;
+      let teamCount = kids.length;
+      for (const kid of kids) {
+        const child = statsOf(kid);
+        direct += child.own;
+        team += child.own + child.team;
+        teamCount += child.teamCount;
+      }
+      visiting.delete(addr);
+      const out = { own: ownMap.get(addr) ?? 0n, direct, team, teamCount };
+      memo.set(addr, out);
+      return out;
+    };
+    return { children, statsOf };
+  }
+
+  private async persistVolumeStats(
+    people: CrmTeamMember[],
+    usdOf: (addr: string) => VolumeStats,
+    bnbOf: (addr: string) => VolumeStats,
+  ) {
+    let written = 0;
+    for (const p of people) {
+      const usd = usdOf(p.address);
+      const bnb = bnbOf(p.address);
+      const ownUsd = usd.own.toString();
+      const directUsd = usd.direct.toString();
+      const teamUsd = usd.team.toString();
+      const ownBnb = bnb.own.toString();
+      const directBnb = bnb.direct.toString();
+      const teamBnb = bnb.team.toString();
+      if (
+        p.ownUsd === ownUsd &&
+        p.directUsd === directUsd &&
+        p.teamUsd === teamUsd &&
+        (p.ownBnb ?? '0') === ownBnb &&
+        (p.directBnb ?? '0') === directBnb &&
+        (p.teamBnb ?? '0') === teamBnb
+      ) {
+        continue;
+      }
+      p.ownUsd = ownUsd;
+      p.directUsd = directUsd;
+      p.teamUsd = teamUsd;
+      p.ownBnb = ownBnb;
+      p.directBnb = directBnb;
+      p.teamBnb = teamBnb;
+      await this.teamRepository.save(p);
+      written += 1;
+    }
+    return written;
+  }
+
+  /** 全员按入金+推荐关系汇总个人/直推/团队业绩并落库 */
+  private async persistVolumesFromJoins() {
+    const people = await this.teamRepository.find();
+    if (!people.length) return 0;
+    const { usd, bnb } = await this.sumJoinsByAddress(people.map((p) => p.address));
+    const usdStats = this.buildVolumeStats(people, usd);
+    const bnbStats = this.buildVolumeStats(people, bnb);
+    await this.persistVolumeStats(people, usdStats.statsOf, bnbStats.statsOf);
+    return people.length;
+  }
+
+  /** 全量刷新：层级 + 入金业绩入库 + 链上额度/节点/有效直推入库 */
+  async syncMetrics() {
+    if (this.metricSyncing) {
+      throw new BusinessException('业绩刷新进行中，请稍候再试', 'CRM_TEAM_METRIC_SYNC_BUSY', HttpStatus.CONFLICT);
+    }
+    this.metricSyncing = true;
+    try {
+      await this.rebuildLayers();
+      const volumeUpdated = await this.persistVolumesFromJoins();
+      const { config, chain } = await this.resolveChain();
+      const latest = await this.rpcService.getClient(chain).getBlockNumber();
+      const rewardsModule = await this.resolveRewardsModule(
+        chain,
+        config.tokenAddress,
+        config.tokenAbiKey,
+        config.businessAddress,
+      );
+      const people = await this.teamRepository.find({ order: { id: 'ASC' } });
+      const startedAt = Date.now();
+      const deadlineAt = startedAt + this.initialSyncMaxMs;
+      let chainUpdated = 0;
+      let chainFailed = 0;
+      const batchSize = 40;
+      for (let i = 0; i < people.length; i += batchSize) {
+        if (Date.now() >= deadlineAt) {
+          return {
+            volumeUpdated,
+            chainUpdated,
+            chainFailed,
+            total: people.length,
+            caughtUp: false,
+          };
+        }
+        const batch = people.slice(i, i + batchSize);
+        const part = await this.refreshChainExtrasBatch(batch, chain, rewardsModule, latest);
+        chainUpdated += part.updated;
+        chainFailed += part.failed;
+      }
+      return {
+        volumeUpdated,
+        chainUpdated,
+        chainFailed,
+        total: people.length,
+        caughtUp: true,
+      };
+    } finally {
+      this.metricSyncing = false;
+    }
+  }
+
+  /** 按推荐关系向下展开全部团队成员 */
+  private async loadDownline(root: string, maxMembers = 5000) {
+    const out: CrmTeamMember[] = [];
+    const seen = new Set<string>([root]);
+    let frontier = [root];
+    while (frontier.length && out.length < maxMembers) {
+      const kids = await this.teamRepository
+        .createQueryBuilder('m')
+        .where('m.inviter_address IN (:...frontier)', { frontier })
+        .getMany();
+      const next: string[] = [];
+      for (const kid of kids) {
+        if (seen.has(kid.address)) continue;
+        seen.add(kid.address);
+        out.push(kid);
+        next.push(kid.address);
+        if (out.length >= maxMembers) break;
+      }
+      frontier = next;
+    }
+    return { members: out, truncated: out.length >= maxMembers };
+  }
+
+  private async sumJoinsByAddress(addresses: string[]) {
+    const usd = new Map<string, bigint>();
+    const bnb = new Map<string, bigint>();
+    for (let i = 0; i < addresses.length; i += 500) {
+      const part = addresses.slice(i, i + 500);
+      if (!part.length) continue;
+      const rows = await this.joinRepository
+        .createQueryBuilder('j')
+        .select('j.address', 'address')
+        .addSelect('COALESCE(SUM(j.participation_usd), 0)', 'usdTotal')
+        .addSelect('COALESCE(SUM(j.bnb_amount), 0)', 'bnbTotal')
+        .where('j.address IN (:...part)', { part })
+        .groupBy('j.address')
+        .getRawMany<{ address: string; usdTotal: string; bnbTotal: string }>();
+      for (const row of rows) {
+        const key = (() => {
+          try {
+            return getAddress(row.address);
+          } catch {
+            return row.address;
+          }
+        })();
+        usd.set(key, this.parseUsd(row.usdTotal));
+        bnb.set(key, this.parseUsd(row.bnbTotal));
+      }
+    }
+    return { usd, bnb };
+  }
+
+  /** 仅读库：本人团队数据 + 每个成员的个人/直推/团队业绩（由入金与推荐关系汇总） */
+  async metricsFromDb(address: string) {
+    const checksum = getAddress(address);
+    const self = await this.teamRepository.findOne({ where: { address: checksum } });
+    const { members: downline, truncated } = await this.loadDownline(checksum);
+    const people = self ? [self, ...downline.filter((m) => m.address !== checksum)] : downline;
+    const addresses = [...new Set([checksum, ...people.map((p) => p.address)])];
+    const { usd, bnb } = await this.sumJoinsByAddress(addresses);
+    const usdStats = this.buildVolumeStats(people, usd);
+    const bnbStats = this.buildVolumeStats(people, bnb);
+    if (people.length) await this.persistVolumeStats(people, usdStats.statsOf, bnbStats.statsOf);
+    const { children, statsOf } = usdStats;
+    const bnbOf = bnbStats.statsOf;
+
+    const root = statsOf(checksum);
+    const directSet = new Set(children.get(checksum) ?? []);
+    const members = downline
+      .filter((member) => directSet.has(member.address))
+      .map((member) => {
+        const stats = statsOf(member.address);
+        const bnb = bnbOf(member.address);
+        return {
+          address: member.address,
+          inviterAddress: member.inviterAddress ?? null,
+          layer: 1,
+          ownUsd: stats.own.toString(),
+          directUsd: stats.direct.toString(),
+          teamUsd: stats.team.toString(),
+          ownBnb: bnb.own.toString(),
+          directBnb: bnb.direct.toString(),
+          teamBnb: bnb.team.toString(),
+          teamCount: stats.teamCount,
+        };
+      });
+    members.sort((a, b) => a.address.localeCompare(b.address));
+
+    return {
+      indexed: Boolean(self) || root.own > 0n,
+      address: checksum,
+      ownUsd: root.own.toString(),
+      directUsd: root.direct.toString(),
+      teamUsd: root.team.toString(),
+      ownBnb: bnbOf(checksum).own.toString(),
+      directBnb: bnbOf(checksum).direct.toString(),
+      teamBnb: bnbOf(checksum).team.toString(),
+      directCount: (children.get(checksum) ?? []).length,
+      teamCount: root.teamCount,
+      truncated,
+      members,
+      updatedAt: self?.updatedAt ?? null,
     };
   }
 

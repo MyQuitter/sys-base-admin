@@ -13,6 +13,7 @@ export interface CrmWlConfig {
   traderSyncedBlock: string;
   nodeSyncedBlock: string;
   relationSyncedBlock: string;
+  joinSyncedBlock?: string;
   updatedAt: string | null;
   /** 本次保存是否清空索引并回退游标 */
   resetIndexed?: boolean;
@@ -42,6 +43,21 @@ export interface CrmWlNodeItem {
   id: number;
   address: string;
   level: number;
+  /** 1=官方位（不占额度），0=团队长位 */
+  uncapped: number;
+  blockNumber: string;
+  txHash?: string;
+  eventAt?: string;
+  updatedAt: string;
+}
+
+export interface CrmWlJoinItem {
+  id: number;
+  address: string;
+  participationId: string;
+  bnbAmount: string;
+  participationUsd: string;
+  quotaUsd: string;
   blockNumber: string;
   txHash?: string;
   eventAt?: string;
@@ -60,6 +76,9 @@ export interface CrmTeamMemberItem {
   ownUsd: string;
   directUsd: string;
   teamUsd: string;
+  ownBnb?: string;
+  directBnb?: string;
+  teamBnb?: string;
   /** V2：额度（原算力 powerUsd） */
   quotaUsd: string;
   nodeLevel: number;
@@ -138,10 +157,29 @@ export function getCrmWlNodes(params: { page?: number; pageSize?: number; addres
 }
 
 export function lookupCrmWlNode(address: string) {
-  return request.get<any, { address: string; indexedLevel: number; onChainLevel: number | null; blockNumber: string | null; txHash: string | null }>(
-    '/crm-whitelist/nodes/lookup',
-    { params: { address } },
-  );
+  return request.get<
+    any,
+    {
+      address: string;
+      indexedLevel: number;
+      indexedUncapped: boolean;
+      onChainLevel: number | null;
+      onChainUncapped: boolean | null;
+      blockNumber: string | null;
+      txHash: string | null;
+    }
+  >('/crm-whitelist/nodes/lookup', { params: { address } });
+}
+
+export function getCrmWlJoins(params: { page?: number; pageSize?: number; address?: string }) {
+  return request.get<any, PageResult<CrmWlJoinItem>>('/crm-whitelist/joins', { params });
+}
+
+export function syncCrmWlJoins() {
+  return request.post<any, CrmWlSyncPart>('/crm-whitelist/joins/sync', undefined, {
+    timeout: 300_000,
+    skipErrorToast: true,
+  });
 }
 
 export function syncCrmTeamRelations() {
@@ -150,6 +188,16 @@ export function syncCrmTeamRelations() {
     undefined,
     { timeout: 300_000, skipErrorToast: true },
   );
+}
+
+export function syncCrmTeamMetrics() {
+  return request.post<
+    any,
+    { volumeUpdated: number; chainUpdated: number; chainFailed: number; total: number; caughtUp: boolean }
+  >('/crm-whitelist/team/sync-metrics', undefined, {
+    timeout: 300_000,
+    skipErrorToast: true,
+  });
 }
 
 export function getCrmTeamMembers(params: {
@@ -163,6 +211,40 @@ export function getCrmTeamMembers(params: {
   return request.get<any, PageResult<CrmTeamMemberItem>>('/crm-whitelist/team/members', {
     params: refreshMetrics ? { ...rest, refreshMetrics: true } : rest,
   });
+}
+
+export interface CrmTeamMemberMetrics {
+  address: string;
+  inviterAddress: string | null;
+  /** 相对查询地址的层级，本接口固定为 1（仅直推） */
+  layer: number;
+  ownUsd: string;
+  directUsd: string;
+  teamUsd: string;
+  ownBnb?: string;
+  directBnb?: string;
+  teamBnb?: string;
+  teamCount: number;
+}
+
+export interface CrmTeamMetrics {
+  indexed: boolean;
+  address: string;
+  ownUsd: string;
+  directUsd: string;
+  teamUsd: string;
+  ownBnb?: string;
+  directBnb?: string;
+  teamBnb?: string;
+  directCount: number;
+  teamCount: number;
+  truncated: boolean;
+  members: CrmTeamMemberMetrics[];
+  updatedAt: string | null;
+}
+
+export function getCrmTeamMetrics(address: string) {
+  return request.get<any, CrmTeamMetrics>('/crm-whitelist/team/metrics', { params: { address } });
 }
 
 export function getCrmTeamOverview(address: string) {
@@ -180,6 +262,15 @@ export function getCrmTeamTree(address: string) {
 }
 
 export interface CrmWlDashboardStats {
+  /** UTC+8 自然日 YYYY-MM-DD，与合约日切口径一致 */
+  utc8Date: string;
+  dailyJoinCapUsd: string;
+  dailyJoinedUsdToday: string;
+  dailyJoinRemainingUsd: string;
+  /** cap=0 时合约不限制；剩余为 uint256.max，前端勿当金额展示 */
+  dailyJoinUnlimited: boolean;
+  /** 链上各账户 participationUsd 合计（入金折 U，不含档位系数） */
+  totalParticipationUsd: string;
   totalQuotaUsd: string;
   totalQuota: string;
   totalParticipations: string;
@@ -205,10 +296,53 @@ export interface CrmWlDashboardStats {
   lastRebaseTime: string;
   pendingExitCount: string;
   rebaseDue: boolean;
+  /** 最近 30 个 UTC+8 自然日入金折 U / BNB / 笔数 */
+  dailyJoins: { date: string; usd: string; bnb: string; count: number }[];
   depthDistribution: { depth: number; count: number }[];
   nodeLevelDistribution: { level: number; count: number }[];
 }
 
 export function getCrmWlDashboard() {
   return request.get<any, CrmWlDashboardStats>('/crm-whitelist/stats');
+}
+
+export type CrmWlKlineInterval = '15m' | '1h' | '4h' | '1d';
+
+export interface CrmWlKlineCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface CrmWlPriceKline {
+  interval: CrmWlKlineInterval;
+  pairAddress: string;
+  pairName: string;
+  source: 'geckoterminal' | 'none';
+  candles: CrmWlKlineCandle[];
+}
+
+export function getCrmWlPriceKline(interval: CrmWlKlineInterval) {
+  return request.get<any, CrmWlPriceKline>('/crm-whitelist/stats/kline', {
+    params: { interval },
+    skipLoading: true,
+  });
+}
+
+export interface CrmWlRealtimeStatus {
+  webhookEnabled: boolean;
+  webhookPath: string;
+  liveMode: 'idle' | 'websocket' | 'polling';
+  lastIngestAt: string | null;
+  lastIngestProcessed: number;
+}
+
+export function getCrmWlRealtime() {
+  return request.get<any, CrmWlRealtimeStatus>('/crm-whitelist/realtime', {
+    skipErrorToast: true,
+    skipLoading: true,
+  });
 }

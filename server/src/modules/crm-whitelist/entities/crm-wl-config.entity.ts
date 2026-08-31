@@ -34,4 +34,7 @@ export class CrmWlConfig extends BaseEntity {
 
   @Column({ name: 'relation_synced_block', type: 'bigint', default: 0 })
   relationSyncedBlock: string;
+
+  @Column({ name: 'join_synced_block', type: 'bigint', default: 0 })
+  joinSyncedBlock: string;
 }

@@ -302,6 +302,38 @@
   color: var(--crm-muted) !important;
 }
 
+.crm-dash-chart-tip {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--crm-line);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  font-size: 12px;
+  color: var(--crm-ink);
+  line-height: 1.55;
+}
+
+.crm-dash-chart-tip-date {
+  color: var(--crm-muted);
+  margin-bottom: 2px;
+}
+
+.crm-dash-kline-meta {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.crm-dash-kline-meta .is-up,
+.crm-dash-chart-tip .is-up {
+  color: #16a34a;
+}
+
+.crm-dash-kline-meta .is-down,
+.crm-dash-chart-tip .is-down {
+  color: #e11d48;
+}
+
 @media (max-width: 768px) {
   .crm-dash-hero-top {
     flex-direction: column;

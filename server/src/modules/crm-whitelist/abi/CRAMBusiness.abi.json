@@ -268,6 +268,12 @@
         "internalType": "uint8",
         "name": "level",
         "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "uncapped",
+        "type": "bool"
       }
     ],
     "name": "NodeWhitelistUpdated",
@@ -571,7 +577,7 @@
         "type": "uint256"
       }
     ],
-    "name": "UnpairedCrmKept",
+    "name": "UnpairedCrmBurned",
     "type": "event"
   },
   {
@@ -849,19 +855,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
-    ],
-    "name": "autoClaimFromToken",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "availableExcessCrm",
     "outputs": [
@@ -906,16 +899,42 @@
     "type": "function"
   },
   {
-    "inputs": [
+    "inputs": [],
+    "name": "dailyJoinCapUsd",
+    "outputs": [
       {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
-    "name": "claimFromToken",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "dailyJoinRemainingUsd",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "dailyJoinedUsdToday",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -926,7 +945,7 @@
         "type": "address"
       }
     ],
-    "name": "claimWithFeeFromToken",
+    "name": "claimFromToken",
     "outputs": [],
     "stateMutability": "payable",
     "type": "function"
@@ -1527,6 +1546,25 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "nodeWhitelistUncapped",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "onTradingEnabled",
     "outputs": [],
@@ -1575,7 +1613,7 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "",
+        "name": "user",
         "type": "address"
       }
     ],
@@ -2201,6 +2239,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "reservedCrm",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -2255,9 +2306,37 @@
         "internalType": "uint8",
         "name": "level",
         "type": "uint8"
+      },
+      {
+        "internalType": "bool",
+        "name": "uncapped",
+        "type": "bool"
       }
     ],
     "name": "setNodeWhitelist",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "accounts",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint8[]",
+        "name": "levels",
+        "type": "uint8[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "uncapped",
+        "type": "bool"
+      }
+    ],
+    "name": "setNodeWhitelistBatch",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

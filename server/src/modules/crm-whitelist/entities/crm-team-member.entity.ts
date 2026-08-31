@@ -43,6 +43,15 @@ export class CrmTeamMember extends BaseEntity {
   @Column({ name: 'team_usd', type: 'decimal', precision: 36, scale: 0, default: 0 })
   teamUsd: string;
 
+  @Column({ name: 'own_bnb', type: 'decimal', precision: 36, scale: 0, default: 0 })
+  ownBnb: string;
+
+  @Column({ name: 'direct_bnb', type: 'decimal', precision: 36, scale: 0, default: 0 })
+  directBnb: string;
+
+  @Column({ name: 'team_bnb', type: 'decimal', precision: 36, scale: 0, default: 0 })
+  teamBnb: string;
+
   /** V2 leaderOverview.quota；列名沿用 power_usd */
   @Column({ name: 'power_usd', type: 'decimal', precision: 36, scale: 0, default: 0 })
   quotaUsd: string;

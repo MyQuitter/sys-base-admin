@@ -359,8 +359,8 @@ export default function LoginPage() {
               current={bothStep}
               style={{ marginBottom: 20 }}
               items={[
-                { title: '账户密码', description: '第 1 步' },
-                { title: '钱包签名', description: '第 2 步' },
+                { title: '账户密码', content: '第 1 步' },
+                { title: '钱包签名', content: '第 2 步' },
               ]}
             />
           </>

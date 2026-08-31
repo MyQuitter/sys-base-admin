@@ -137,4 +137,68 @@ export class CrmWlQueryService {
       txHash: row?.txHash ?? null,
     };
   }
+
+  /** 公开只读 JSON-RPC 代理：浏览器只访问本域，由服务器转发到 Alchemy / 已配置节点 */
+  async proxyRpc(body: unknown) {
+    const allowed = new Set([
+      'eth_call',
+      'eth_getBalance',
+      'eth_blockNumber',
+      'eth_chainId',
+      'eth_estimateGas',
+      'eth_gasPrice',
+      'eth_getTransactionCount',
+      'eth_getTransactionReceipt',
+      'net_version',
+      'web3_clientVersion',
+    ]);
+    const items = Array.isArray(body) ? body : [body];
+    const rpcError = (id: unknown, message: string) => ({
+      jsonrpc: '2.0',
+      id: id ?? null,
+      error: { code: -32601, message },
+    });
+    for (const item of items) {
+      const method = item && typeof item === 'object' ? (item as { method?: unknown }).method : undefined;
+      const id = item && typeof item === 'object' ? (item as { id?: unknown }).id : null;
+      if (typeof method !== 'string' || !allowed.has(method)) {
+        const err = rpcError(id, `不允许的 RPC 方法: ${String(method || '')}`);
+        return Array.isArray(body)
+          ? items.map((x) => rpcError((x as { id?: unknown })?.id, '不允许的 RPC 方法'))
+          : err;
+      }
+    }
+    const alchemy = 'https://bnb-mainnet.g.alchemy.com/v2/IECXKI3eN4Y4dbzajOkEZfGuluPhZEwF';
+    const urls = [alchemy];
+    const config = await this.configService.getOrEmpty();
+    const chainId = config.chainId ?? 56;
+    const chain = await this.chainRepository.findOne({ where: { chainId, status: 1 } });
+    if (chain?.rpcUrls?.length) {
+      for (const url of this.rpcService.rankRpcUrlsForLogs(chain.rpcUrls)) {
+        if (!urls.includes(url)) urls.push(url);
+      }
+    }
+    const id = (items[0] as { id?: unknown })?.id;
+    let lastMessage = 'RPC 转发失败';
+    for (const rpcUrl of urls) {
+      try {
+        const res = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(20_000),
+        });
+        const text = await res.text();
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          lastMessage = text.slice(0, 200) || `RPC HTTP ${res.status}`;
+        }
+      } catch (err) {
+        lastMessage = err instanceof Error ? err.message : String(err);
+      }
+    }
+    const err = rpcError(id, lastMessage);
+    return Array.isArray(body) ? [err] : err;
+  }
 }

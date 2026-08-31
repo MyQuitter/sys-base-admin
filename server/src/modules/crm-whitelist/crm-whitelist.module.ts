@@ -7,8 +7,10 @@ import { CrmWlConfig } from './entities/crm-wl-config.entity';
 import { CrmWlNode } from './entities/crm-wl-node.entity';
 import { CrmWlTrader } from './entities/crm-wl-trader.entity';
 import { CrmTeamMember } from './entities/crm-team-member.entity';
+import { CrmWlJoin } from './entities/crm-wl-join.entity';
 import { CrmWlConfigService } from './services/crm-wl-config.service';
 import { CrmWlDashboardService } from './services/crm-wl-dashboard.service';
+import { CrmWlRealtimeService } from './services/crm-wl-realtime.service';
 import { CrmTeamService } from './services/crm-team.service';
 import { CrmWlQueryService } from './services/crm-wl-query.service';
 import { CrmWlSyncService } from './services/crm-wl-sync.service';
@@ -20,9 +22,16 @@ import { CrmWlSyncService } from './services/crm-wl-sync.service';
 @Module({
   imports: [
     BlockchainModule,
-    TypeOrmModule.forFeature([CrmWlConfig, CrmWlTrader, CrmWlNode, CrmTeamMember, Chain]),
+    TypeOrmModule.forFeature([CrmWlConfig, CrmWlTrader, CrmWlNode, CrmTeamMember, CrmWlJoin, Chain]),
   ],
   controllers: [CrmWlController],
-  providers: [CrmWlConfigService, CrmWlQueryService, CrmWlSyncService, CrmTeamService, CrmWlDashboardService],
+  providers: [
+    CrmWlConfigService,
+    CrmWlQueryService,
+    CrmWlSyncService,
+    CrmTeamService,
+    CrmWlDashboardService,
+    CrmWlRealtimeService,
+  ],
 })
 export class CrmWhitelistModule {}

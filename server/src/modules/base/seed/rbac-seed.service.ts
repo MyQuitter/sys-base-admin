@@ -80,6 +80,7 @@ const PERMISSION_SEEDS = [
   { code: 'crm-wl:node-list', name: '节点白名单列表', module: 'crm-whitelist' },
   { code: 'crm-wl:node-write', name: '节点白名单写入', module: 'crm-whitelist' },
   { code: 'crm-team:list', name: '链上团队数据列表', module: 'crm-whitelist' },
+  { code: 'crm-wl:join-list', name: '入金记录列表', module: 'crm-whitelist' },
 ];
 
 interface MenuSeed {
@@ -120,7 +121,8 @@ const MENU_SEEDS: MenuSeed[] = [
       { name: '合约配置', path: '/crm-whitelist/config', permissionCode: 'crm-wl:config', sort: 2 },
       { name: '交易白名单', path: '/crm-whitelist/trader', permissionCode: 'crm-wl:trader-list', sort: 3 },
       { name: '节点白名单', path: '/crm-whitelist/node', permissionCode: 'crm-wl:node-list', sort: 4 },
-      { name: '团队数据', path: '/crm-whitelist/team', permissionCode: 'crm-team:list', sort: 5 },
+      { name: '入金记录', path: '/crm-whitelist/joins', permissionCode: 'crm-wl:join-list', sort: 5 },
+      { name: '团队数据', path: '/crm-whitelist/team', permissionCode: 'crm-team:list', sort: 6 },
     ],
   },
   {

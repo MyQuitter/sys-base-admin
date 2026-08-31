@@ -1,7 +1,7 @@
 import { Button, Card, Form, Input, InputNumber, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { getEnabledChains } from '@/api/blockchain';
-import { getCrmWlConfig, saveCrmWlConfig, syncCrmTeamRelations, syncCrmWl } from '@/api/crm-whitelist';
+import { getCrmWlConfig, saveCrmWlConfig, syncCrmTeamRelations, syncCrmWl, syncCrmWlJoins } from '@/api/crm-whitelist';
 import { AuthButton } from '@/components/AuthButton';
 
 import { toast } from '@/utils/toast';
@@ -62,7 +62,7 @@ export default function CrmWlConfigPage() {
       hide();
       const syncHide = toast.loading('地址或起始块已变更，正在清空并重新同步...', 0);
       try {
-        const [wl, team] = await Promise.all([syncCrmWl(), syncCrmTeamRelations()]);
+        const [wl, team, joins] = await Promise.all([syncCrmWl(), syncCrmTeamRelations(), syncCrmWlJoins()]);
         const wlDone = wl.trader.caughtUp && wl.node.caughtUp;
         const parts = [
           wlDone
@@ -71,9 +71,12 @@ export default function CrmWlConfigPage() {
           team.caughtUp
             ? `团队已追上（${team.processed} 条）`
             : `团队部分同步至 ${team.syncedTo}（${team.processed} 条）`,
+          joins.caughtUp
+            ? `入金已追上（${joins.processed} 条）`
+            : `入金部分同步至 ${joins.syncedTo}（${joins.processed} 条）`,
         ];
         toast.success(
-          `已清空重扫：${parts.join('；')}${wlDone && team.caughtUp ? '' : '，可再点「立即同步事件」追平'}`,
+          `已清空重扫：${parts.join('；')}${wlDone && team.caughtUp && joins.caughtUp ? '' : '，可再点「立即同步事件」追平'}`,
         );
         await load();
       } finally {
@@ -111,7 +114,8 @@ export default function CrmWlConfigPage() {
     <Card title="CrmToken 白名单 · 合约配置" loading={loading}>
       <Typography.Paragraph type="secondary">
         手动填写已部署的 Token / Business 地址；RPC 使用「链管理」中对应 chainId 的启用节点。写链由 MetaMask
-        完成，服务端仅索引事件。仅当地址或起始块变更时才会清空索引并重扫；日常保存不会清数据。
+        完成，服务端负责索引。入金与团队：启动时先扫历史块，之后可通过 Webhook（POST
+        /api/crm-whitelist/hooks/logs）或链管理里的 wssUrls 实时入库。仅当地址或起始块变更时才会清空索引并重扫。
       </Typography.Paragraph>
       <Form form={form} layout="vertical" style={{ maxWidth: 640 }}>
         <Form.Item name="chainId" label="Chain ID" rules={[{ required: true, message: '请选择或填写 chainId' }]}>

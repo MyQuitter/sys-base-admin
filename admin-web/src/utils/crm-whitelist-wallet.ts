@@ -110,6 +110,8 @@ export async function writeSetNodeWhitelist(params: {
   businessAddress: string;
   account: string;
   level: number;
+  /** 官方位 true：不占额度；团队长位 false */
+  uncapped: boolean;
 }) {
   try {
     const account = await ensureWalletConnected();
@@ -134,7 +136,7 @@ export async function writeSetNodeWhitelist(params: {
       address: target,
       abi,
       functionName: 'setNodeWhitelist',
-      args: [node, params.level],
+      args: [node, params.level, params.level > 0 ? params.uncapped : false],
       account,
       chain: resolveChain(params.chainId),
     });

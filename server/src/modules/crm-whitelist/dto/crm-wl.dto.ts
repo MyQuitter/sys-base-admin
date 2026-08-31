@@ -87,6 +87,13 @@ export class ImportCrmWlTxDto {
   txHash: string;
 }
 
+export class QueryCrmWlKlineDto {
+  @ApiPropertyOptional({ enum: ['15m', '1h', '4h', '1d'], default: '1h' })
+  @IsOptional()
+  @IsIn(['15m', '1h', '4h', '1d'])
+  interval?: '15m' | '1h' | '4h' | '1d';
+}
+
 export class QueryCrmTeamListDto extends QueryCrmWlListDto {
   @ApiPropertyOptional({ description: '推荐人地址' })
   @IsOptional()

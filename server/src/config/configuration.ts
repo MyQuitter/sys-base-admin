@@ -117,4 +117,13 @@ export default () => ({
       maxPerTick: parseInt(process.env.BC_TX_SYNC_MAX_PER_TICK ?? '5', 10),
     },
   },
+
+  /** CrmToken 入金/团队实时：Webhook + 可选 WSS，首次启动补扫 */
+  crmWl: {
+    liveEnabled: process.env.CRM_WL_LIVE_ENABLED !== 'false',
+    livePoll: process.env.CRM_WL_LIVE_POLL !== 'false',
+    livePollMs: parseInt(process.env.CRM_WL_LIVE_POLL_MS ?? '20000', 10),
+    /** Alchemy Notify 签名密钥（Webhook 详情页 Signing Key），不是 API Auth Token */
+    webhookSecret: process.env.CRM_WL_WEBHOOK_SECRET || '',
+  },
 });

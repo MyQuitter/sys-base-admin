@@ -14,12 +14,45 @@ const cookieParser = require('cookie-parser');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const helmet = require('helmet');
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.use(cookieParser());
+  app.use((
+    req: { originalUrl?: string; method?: string; headers?: Record<string, string | string[] | undefined> },
+    res: { setHeader: (k: string, v: string) => void; sendStatus: (n: number) => void; end: () => void },
+    next: () => void,
+  ) => {
+    const url = req.originalUrl || '';
+    const publicCrm =
+      url.startsWith('/api/crm-whitelist/team/metrics') || url.startsWith('/api/crm-whitelist/rpc');
+    if (!publicCrm) {
+      next();
+      return;
+    }
+    const rawOrigin = req.headers && req.headers.origin;
+    const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+    const allowOrigin = origin || '*';
+    const origSetHeader = res.setHeader.bind(res);
+    res.setHeader = ((k: string, v: string) => {
+      if (/^access-control-allow-origin$/i.test(k)) return origSetHeader(k, allowOrigin);
+      if (/^access-control-allow-credentials$/i.test(k)) return origSetHeader(k, 'false');
+      return origSetHeader(k, v);
+    }) as typeof res.setHeader;
+    origSetHeader('Access-Control-Allow-Origin', allowOrigin);
+    origSetHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    origSetHeader('Access-Control-Allow-Headers', 'Content-Type');
+    origSetHeader('Access-Control-Allow-Credentials', 'false');
+    origSetHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    origSetHeader('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
   app.enableCors({
     origin: configService.get<string[]>('corsOrigins'),
     credentials: true,
@@ -50,9 +83,9 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = configService.get<number>('port') ?? 3000;
-  await app.listen(port);
-  console.log(`Server running on http://localhost:${port}/api`);
-  console.log(`Swagger: http://localhost:${port}/api/docs`);
+  await app.listen(port, '0.0.0.0');
+  console.log(`Server running on http://0.0.0.0:${port}/api`);
+  console.log(`Swagger: http://127.0.0.1:${port}/api/docs`);
 }
 
 bootstrap();
