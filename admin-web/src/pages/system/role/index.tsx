@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Tooltip, Tree, Typography, message } from 'antd';
+import { Form, Input, Modal, Tooltip, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,6 +15,8 @@ import {
 import { getPermissions, type PermissionItem } from '@/api/permission';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
+
+import { toast } from '@/utils/toast';
 
 function codePrefix(code?: string): string | undefined {
   if (!code) return undefined;
@@ -133,10 +135,10 @@ export default function RoleListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateRole(editing.id, { name: values.name, description: values.description });
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createRole(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -144,7 +146,7 @@ export default function RoleListPage() {
 
   const openAssign = (record: RoleItem) => {
     if (!record.menuRestricted) {
-      message.warning('请先分配菜单');
+      toast.warning('请先分配菜单');
       return;
     }
     const prefixes = menuPrefixes(record, menuOptions);
@@ -164,7 +166,7 @@ export default function RoleListPage() {
     if (!currentRole) return;
     const permissionIds = checkedKeys.filter((k) => typeof k === 'number');
     const saved = await assignRolePermissions(currentRole.id, permissionIds);
-    message.success(
+    toast.success(
       permissionIds.length ? '权限分配成功' : '未勾选权限，已默认授予所选菜单栏目下全部权限',
     );
     setPermModalOpen(false);
@@ -191,7 +193,7 @@ export default function RoleListPage() {
   const handleAssignMenus = async () => {
     if (!currentRole) return;
     await assignRoleMenus(currentRole.id, [...new Set([...menuCheckedKeys, ...menuHalfCheckedRef.current])]);
-    message.success('菜单已保存，未单独勾选的栏目已默认授予全部权限');
+    toast.success('菜单已保存，未单独勾选的栏目已默认授予全部权限');
     setMenuModalOpen(false);
     loadData();
   };
@@ -263,7 +265,7 @@ export default function RoleListPage() {
                     permission="role:delete"
                     onClick={async () => {
                       await deleteRole(record.id);
-                      message.success('删除成功');
+                      toast.success('删除成功');
                       loadData();
                     }}
                   >

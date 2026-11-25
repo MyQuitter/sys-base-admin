@@ -1,8 +1,9 @@
 import { WalletOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Form, Input, Steps, Typography, message } from 'antd';
-import { useState } from 'react';
+import { Alert, Button, Card, Form, Input, Steps, Typography } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  getLoginCaptcha,
   getWalletNonce,
   isLoginTicketResult,
   login,
@@ -15,9 +16,12 @@ import { useTabStore } from '@/stores/useTabStore';
 import { useSiteStore } from '@/stores/useSiteStore';
 import { withCacheBust } from '@/utils/branding';
 import { resolveLandingPath } from '@/utils/menu';
+import { formatDateTime, formatTime } from '@/utils/format';
+import { restoreSession } from '@/utils/restore-session';
 import { connectWallet, ensureWalletChain, shortenAddress, signMessage } from '@/utils/wallet';
 import './login.css';
 
+import { toast } from '@/utils/toast';
 type LoginErrorScope = 'password' | 'wallet';
 
 interface LoginErrorState {
@@ -54,6 +58,8 @@ const LOGIN_ERROR_HINTS: Record<string, { title: string; hint?: string }> = {
   WALLET_ADDRESS_INVALID: { title: '钱包地址无效', hint: '请确认已正确连接 MetaMask 并重试。' },
   LOGIN_MODE_WALLET_DISABLED: { title: '未启用钱包登录', hint: '当前系统未开放钱包登录，请使用账户密码。' },
   LOGIN_MODE_PASSWORD_DISABLED: { title: '未启用密码登录', hint: '当前系统仅支持钱包登录。' },
+  RATE_LIMITED: { title: '请求过于频繁', hint: '请等待约 1 分钟后再试，无需反复点击登录。' },
+  AUTH_CAPTCHA_INVALID: { title: '验证码错误', hint: '请点击图片刷新验证码后重新输入。' },
 };
 
 function getApiError(err: unknown) {
@@ -62,16 +68,18 @@ function getApiError(err: unknown) {
       data?: {
         message?: string;
         errorCode?: string;
-        detail?: { retryAfterSeconds?: number; lockedUntil?: string; remainingAttempts?: number };
+        detail?: { retryAfterSeconds?: number; lockedUntil?: string; remainingAttempts?: number; lockScope?: string };
       };
     };
+    errorCode?: string;
     message?: string;
     code?: number;
+    detail?: { retryAfterSeconds?: number; lockedUntil?: string; remainingAttempts?: number; lockScope?: string };
   };
   return {
     message: e.response?.data?.message ?? e.message ?? '操作失败',
-    errorCode: e.response?.data?.errorCode,
-    detail: e.response?.data?.detail,
+    errorCode: e.response?.data?.errorCode ?? e.errorCode,
+    detail: e.response?.data?.detail ?? e.detail,
     walletRejected: e.code === 4001,
   };
 }
@@ -109,13 +117,16 @@ function resolveLoginError(
   if (errorCode === 'LOGIN_LOCKED') {
     const minutes = formatRetryMinutes(detail?.retryAfterSeconds);
     const unlockHint = detail?.lockedUntil
-      ? `预计解锁时间：${new Date(detail.lockedUntil).toLocaleString()}。`
+      ? `预计解锁时间：${formatDateTime(detail.lockedUntil)}。`
       : undefined;
+    const ipLocked = (detail as { lockScope?: string } | undefined)?.lockScope === 'ip';
     return {
       scope,
-      title: '登录已临时锁定',
+      title: ipLocked ? '当前网络已临时封禁' : '登录已临时锁定',
       message: minutes
-        ? `连续登录失败次数过多，请 ${minutes} 分钟后再试。`
+        ? ipLocked
+          ? `同一网络登录失败次数过多，请 ${minutes} 分钟后再试。`
+          : `连续登录失败次数过多，请 ${minutes} 分钟后再试。`
         : errMsg,
       detail: unlockHint,
       errorCode,
@@ -157,7 +168,7 @@ async function finishLogin(
   deps.resetTabs();
   await deps.fetchMenus();
   const home = resolveLandingPath(useMenuStore.getState().menus);
-  message.success('登录成功');
+  toast.success('登录成功');
   deps.navigate(home, { replace: true });
 }
 
@@ -182,12 +193,50 @@ export default function LoginPage() {
   const [verifiedUsername, setVerifiedUsername] = useState<string>();
   const [boundWalletMasked, setBoundWalletMasked] = useState<string>();
   const [loginError, setLoginError] = useState<LoginErrorState>();
+  const [captchaId, setCaptchaId] = useState('');
+  const [captchaImage, setCaptchaImage] = useState('');
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [passwordForm] = Form.useForm();
   const [walletMismatch, setWalletMismatch] = useState<{
     current: string;
     expected: string;
     detail?: string;
   }>();
   const logoPreviewUrl = withCacheBust(logoUrl);
+
+  const loadCaptcha = useCallback(async () => {
+    setCaptchaLoading(true);
+    try {
+      const res = await getLoginCaptcha();
+      setCaptchaId(res.captchaId);
+      setCaptchaImage(res.image);
+      passwordForm.setFieldValue('captchaCode', undefined);
+    } catch {
+      toast.error('验证码加载失败，请点击图片重试');
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }, [passwordForm]);
+
+  useEffect(() => {
+    void loadCaptcha();
+  }, [loadCaptcha]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const boot = async () => {
+      let ok = !!useAuthStore.getState().accessToken;
+      if (!ok) ok = await restoreSession();
+      if (!ok || cancelled) return;
+      await fetchMenus();
+      if (cancelled) return;
+      navigate(resolveLandingPath(useMenuStore.getState().menus), { replace: true });
+    };
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchMenus, navigate]);
 
   const handleAuthSuccess = async (accessToken: string, userInfo: Parameters<typeof setAuth>[1]) => {
     setLoginError(undefined);
@@ -196,7 +245,7 @@ export default function LoginPage() {
 
   const showLoginErrorAlert = (error: LoginErrorState) => {
     setLoginError(error);
-    message.error(error.title);
+    toast.error(error.title);
   };
 
   const runWalletSignIn = async (options?: { loginTicket?: string }) => {
@@ -252,11 +301,16 @@ export default function LoginPage() {
     }
   };
 
-  const onPasswordFinish = async (values: { username: string; password: string }) => {
+  const onPasswordFinish = async (values: { username: string; password: string; captchaCode: string }) => {
     setLoginError(undefined);
     setLoading(true);
     try {
-      const res = await login(values);
+      const res = await login({
+        username: values.username,
+        password: values.password,
+        captchaId,
+        captchaCode: values.captchaCode,
+      });
       if (isLoginTicketResult(res)) {
         setLoginTicket(res.loginTicket);
         setTicketExpiresAt(res.expiresAt);
@@ -264,12 +318,13 @@ export default function LoginPage() {
         setBoundWalletMasked(res.boundWalletMasked);
         setWalletMismatch(undefined);
         setBothStep(1);
-        message.success('账户密码验证通过，请继续完成钱包签名');
+        toast.success('账户密码验证通过，请继续完成钱包签名');
         return;
       }
       await handleAuthSuccess(res.accessToken, res.userInfo);
     } catch (err: unknown) {
       showLoginErrorAlert(resolveLoginError(err, 'password', walletChainName));
+      void loadCaptcha();
     } finally {
       setLoading(false);
     }
@@ -293,7 +348,7 @@ export default function LoginPage() {
     if (!iso) return '请在 5 分钟内完成';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '请在 5 分钟内完成';
-    return `请在 ${d.toLocaleTimeString()} 前完成（约 5 分钟有效）`;
+    return `请在 ${formatTime(d)} 前完成（约 5 分钟有效）`;
   };
 
   const renderErrorAlert = (scope: LoginErrorScope) => {
@@ -303,10 +358,9 @@ export default function LoginPage() {
       <Alert
         type="error"
         showIcon
-        closable
-        onClose={() => setLoginError(undefined)}
+        closable={{ onClose: () => setLoginError(undefined) }}
         style={{ marginBottom: 16 }}
-        message={loginError.title}
+        title={loginError.title}
         description={
           <>
             <div>{loginError.message}</div>
@@ -353,7 +407,7 @@ export default function LoginPage() {
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message="双重验证登录"
+              title="双重验证登录"
               description="须先验证账户密码，再使用与该账号绑定的钱包在指定链上签名，两步均通过后方可进入系统。"
             />
             <Steps
@@ -361,8 +415,8 @@ export default function LoginPage() {
               current={bothStep}
               style={{ marginBottom: 20 }}
               items={[
-                { title: '账户密码', description: '第 1 步' },
-                { title: '钱包签名', description: '第 2 步' },
+                { title: '账户密码', content: '第 1 步' },
+                { title: '钱包签名', content: '第 2 步' },
               ]}
             />
           </>
@@ -377,15 +431,40 @@ export default function LoginPage() {
               </Typography.Paragraph>
             ) : null}
             <Form
+              form={passwordForm}
               layout="vertical"
               onFinish={onPasswordFinish}
-              initialValues={{ username: 'admin', password: 'Admin@123' }}
+              initialValues={{ username: '', password: '', captchaCode: '' }}
             >
               <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
                 <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
               </Form.Item>
               <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
                 <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
+              </Form.Item>
+              <Form.Item label="验证码" required>
+                <div className="login-captcha">
+                  <Form.Item
+                    name="captchaCode"
+                    noStyle
+                    rules={[{ required: true, message: '请输入验证码' }]}
+                  >
+                    <Input placeholder="请输入图中字符" size="large" maxLength={8} autoComplete="off" />
+                  </Form.Item>
+                  <button
+                    type="button"
+                    className={`login-captcha__img${captchaLoading ? ' is-loading' : ''}`}
+                    onClick={() => void loadCaptcha()}
+                    title="点击刷新验证码"
+                    aria-label="点击刷新验证码"
+                  >
+                    {captchaImage ? (
+                      <img key={captchaId} src={captchaImage} alt="验证码" draggable={false} />
+                    ) : (
+                      <span>点击刷新</span>
+                    )}
+                  </button>
+                </div>
               </Form.Item>
               <Button
                 type="primary"
@@ -427,7 +506,7 @@ export default function LoginPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message={`账户「${verifiedUsername ?? ''}」已通过密码验证`}
+              title={`账户「${verifiedUsername ?? ''}」已通过密码验证`}
               description={
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                   <li>
@@ -447,15 +526,16 @@ export default function LoginPage() {
               <Alert
                 type="error"
                 showIcon
-                closable
-                onClose={() => {
-                  setWalletMismatch(undefined);
-                  if (loginError?.errorCode === 'WALLET_ADDRESS_MISMATCH') {
-                    setLoginError(undefined);
-                  }
+                closable={{
+                  onClose: () => {
+                    setWalletMismatch(undefined);
+                    if (loginError?.errorCode === 'WALLET_ADDRESS_MISMATCH') {
+                      setLoginError(undefined);
+                    }
+                  },
                 }}
                 style={{ marginBottom: 16 }}
-                message="钱包地址与绑定账户不一致"
+                title="钱包地址与绑定账户不一致"
                 description={
                   <>
                     <div>

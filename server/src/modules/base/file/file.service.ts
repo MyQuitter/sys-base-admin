@@ -6,6 +6,7 @@ import { BusinessException } from '../../../common/exceptions/business.exception
 import { getPagination, toPageResult } from '../../../common/utils/pagination';
 import { QueryFileDto } from './dto/query-file.dto';
 import { FileRecord } from './entities/file.entity';
+import { inspectUpload } from '../../../common/utils/upload-file';
 import { LocalStorageService } from './local-storage.service';
 
 export interface FileVo {
@@ -56,9 +57,7 @@ export class FileService {
     if (file.size > this.maxSize) {
       throw new BusinessException('文件大小超过限制', 'FILE_TOO_LARGE');
     }
-    if (this.allowedMime.size > 0 && !this.allowedMime.has(file.mimetype)) {
-      throw new BusinessException('不支持的文件类型', 'FILE_TYPE_NOT_ALLOWED');
-    }
+    return inspectUpload(file.buffer, file.originalname, this.allowedMime);
   }
 
   async saveMany(files: Express.Multer.File[], userId: number): Promise<FileVo[]> {
@@ -71,13 +70,13 @@ export class FileService {
   }
 
   async saveOne(file: Express.Multer.File, userId: number): Promise<FileVo> {
-    this.validateFile(file);
-    const { storedName, storedPath } = this.storage.save(file.buffer, file.originalname);
+    const inspected = this.validateFile(file);
+    const { storedName, storedPath } = this.storage.save(file.buffer, inspected.ext);
     const record = this.fileRepository.create({
-      originalName: file.originalname,
+      originalName: inspected.originalName,
       storedName,
       storedPath,
-      mimeType: file.mimetype,
+      mimeType: inspected.mimeType,
       size: file.size,
       uploadedBy: userId,
     });

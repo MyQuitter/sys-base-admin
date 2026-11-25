@@ -22,6 +22,10 @@ import { WalletLoginDto } from './dto/wallet-login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { LoginLockoutService } from './login-lockout.service';
 import { WalletAuthService } from './wallet-auth.service';
+import { LoginCaptchaService } from './login-captcha.service';
+import { TokenRevokeService } from './token-revoke.service';
+import { getClientIp } from '../../../common/utils/client-ip';
+import { requireDeviceId } from '../../../common/utils/device-id';
 
 /**
  * 后台认证编排服务（sys_user）。
@@ -31,11 +35,12 @@ import { WalletAuthService } from './wallet-auth.service';
  * - wallet：仅钱包 → wallet/nonce + wallet/login
  * - both：密码通过后返回 loginTicket → nonce → wallet/complete 验签后再发 Token
  *
- * Token 双轨：accessToken 放响应体；refresh_token 写 HttpOnly Cookie，并在 Redis 存 refresh:{userId}。
+ * Token 双轨：accessToken 放响应体；refresh_token 写 HttpOnly Cookie。
+ * 会话按设备绑定：Redis `refresh:{userId}:{deviceId}` / `online:{userId}:{deviceId}`，JWT 含 `did`。
  */
 @Injectable()
 export class AuthService {
-  /** 存 refresh:{userId}、online:{userId} */
+  /** 存 refresh/online 设备会话 */
   private redis: Redis;
 
   constructor(
@@ -47,6 +52,8 @@ export class AuthService {
     private readonly settingService: SettingService,
     private readonly walletAuthService: WalletAuthService,
     private readonly loginLockoutService: LoginLockoutService,
+    private readonly loginCaptchaService: LoginCaptchaService,
+    private readonly tokenRevoke: TokenRevokeService,
   ) {
     this.redis = new Redis({
       host: configService.get<string>('redis.host'),
@@ -66,7 +73,7 @@ export class AuthService {
   /** 从 HTTP 请求提取防护日志上下文（IP、路径），可再合并用户名/钱包等 */
   private buildLogContext(req?: Request, extra?: Partial<ProtectionLogContext>): ProtectionLogContext {
     return {
-      ip: req?.ip ?? req?.socket?.remoteAddress,
+      ip: getClientIp(req),
       path: req?.url,
       ...extra,
     };
@@ -114,7 +121,7 @@ export class AuthService {
 
   /** 按已绑定钱包地址查用户（纯钱包登录） */
   private async findUserByWallet(address: string, ctx?: ProtectionLogContext) {
-    const checksum = this.walletAuthService.normalizeAddress(address, ctx);
+    const checksum = await this.walletAuthService.normalizeAddress(address, ctx);
     return this.userRepository.findOne({
       where: { walletAddress: checksum },
       relations: { roles: { permissions: true } },
@@ -134,19 +141,22 @@ export class AuthService {
 
   /**
    * 登录成功统一发证：
-   * 1. 签 access JWT（含 permissions、type:admin）
-   * 2. 签 refresh JWT，写入 Redis + HttpOnly Cookie
-   * 3. 记登录成功日志、登记 online:{userId}
+   * 1. 读取并校验 X-Device-Id
+   * 2. 签 access JWT（含 permissions、type:admin、did）
+   * 3. 签 refresh JWT（含 did），写入 Redis + HttpOnly Cookie
+   * 4. 记登录成功日志、登记 online:{userId}:{deviceId}
    */
   private async issueTokens(user: User, res: Response, req?: Request, loginType: LoginType = 'password') {
-    const ip = req?.ip ?? req?.socket?.remoteAddress;
+    const deviceId = requireDeviceId(req);
+    const ip = getClientIp(req) ?? req?.ip ?? req?.socket?.remoteAddress;
     const permissions = getUserPermissionCodes(user);
-    // access payload：后续 PermissionsGuard 从 JWT 读权限码，无需每次查库
+    // access payload 仍携带 permissions 便于排查；鉴权以 JwtStrategy 查库结果为准
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
       permissions,
       type: 'admin',
+      did: deviceId,
     };
 
     const accessExpires = this.configService.getOrThrow<string>('jwt.accessTokenExpiresIn');
@@ -154,14 +164,14 @@ export class AuthService {
     const signOptions = this.jwtSignOptions;
 
     const accessToken = await this.jwtService.signAsync(payload, signOptions(accessExpires));
-    // refresh 仅含 sub + type，不带权限；旋转策略为「同一 refresh 存 Redis 比对」
+    await this.tokenRevoke.clear(user.id, deviceId);
+    // refresh 含 sub + type + did；按设备键存 Redis 比对
     const refreshToken = await this.jwtService.signAsync(
-      { sub: user.id, type: 'refresh' },
+      { sub: user.id, type: 'refresh', did: deviceId },
       signOptions(refreshExpires),
     );
 
-    // 与 Cookie 中的 refresh 一致；登出/踢下线时删此 key 即可失效
-    await this.redis.set(`refresh:${user.id}`, refreshToken, 'EX', 7 * 24 * 3600);
+    await this.redis.set(this.tokenRevoke.refreshKey(user.id, deviceId), refreshToken, 'EX', 7 * 24 * 3600);
 
     await this.logService.recordLogin({
       username: user.username,
@@ -171,14 +181,14 @@ export class AuthService {
       loginType,
     });
 
-    // 在线用户列表监控读取 online:*
     await this.redis.set(
-      `online:${user.id}`,
+      this.tokenRevoke.onlineKey(user.id, deviceId),
       JSON.stringify({
         userId: user.id,
         username: user.username,
         nickname: user.nickname,
         ip,
+        deviceId,
         loginTime: new Date().toISOString(),
       }),
       'EX',
@@ -223,16 +233,20 @@ export class AuthService {
     });
 
     if (lockStatus.locked) {
+      const ipLocked = lockStatus.scope === 'ip';
       this.recordProtection(req, {
         category: 'auth',
-        eventType: 'LOGIN_LOCKED',
+        eventType: ipLocked ? 'LOGIN_IP_LOCKED' : 'LOGIN_LOCKED',
         errorCode: 'LOGIN_LOCKED',
-        message: '登录失败次数过多，账号已临时锁定',
+        message: ipLocked ? '该网络登录失败次数过多，已临时封禁' : '登录失败次数过多，账号已临时锁定',
         severity: 'warn',
         username,
         userId,
       });
-      throw this.loginLockoutService.buildLockedException(lockStatus.retryAfterSeconds ?? 0);
+      throw this.loginLockoutService.buildLockedException(
+        lockStatus.retryAfterSeconds ?? 0,
+        lockStatus.scope ?? 'account',
+      );
     }
 
     this.recordProtection(req, {
@@ -263,6 +277,8 @@ export class AuthService {
     this.walletAuthService.assertPasswordLoginAllowed(ctx);
     const ip = ctx.ip;
     const loginMode = this.settingService.getLoginMode();
+
+    await this.loginCaptchaService.assertValid(dto.captchaId, dto.captchaCode);
 
     // 已锁定则直接拒绝，不再验密（防爆破继续打 bcrypt）
     await this.loginLockoutService.assertNotLocked(ip, dto.username);
@@ -321,6 +337,7 @@ export class AuthService {
    */
   async getWalletNonce(params: { address?: string; loginTicket?: string; chainId: number }, req?: Request) {
     const ctx = this.buildLogContext(req);
+    await this.loginLockoutService.assertIpNotLocked(ctx.ip);
     this.walletAuthService.assertWalletLoginAllowed(ctx);
     const loginMode = this.settingService.getLoginMode();
 
@@ -348,6 +365,7 @@ export class AuthService {
         message: '缺少钱包地址',
         severity: 'info',
       });
+      await this.walletAuthService.recordAuthFailure(ctx.ip, 'missing', ctx);
       throw new UnauthorizedException({ message: '缺少钱包地址', errorCode: 'WALLET_ADDRESS_INVALID' });
     }
     return this.walletAuthService.createNonceForAddress(params.address, params.chainId, undefined, ctx);
@@ -377,7 +395,7 @@ export class AuthService {
     }
 
     const ip = ctx.ip;
-    // 核心：viem 验签 + 一次性销毁 nonce（见 WalletAuthService.verifySignature）
+    await this.loginLockoutService.assertIpNotLocked(ip);
     await this.walletAuthService.verifySignature(dto.address, dto.signature, dto.chainId, undefined, ctx);
     const user = await this.findUserByWallet(dto.address, ctx);
 
@@ -398,6 +416,7 @@ export class AuthService {
         username: dto.address,
         walletAddress: dto.address,
       });
+      await this.walletAuthService.recordAuthFailure(ip, dto.address, ctx);
       throw new UnauthorizedException({ message: '该钱包未绑定任何用户', errorCode: 'WALLET_NOT_BOUND' });
     }
     if (user.status !== 1) {
@@ -414,6 +433,7 @@ export class AuthService {
       throw new UnauthorizedException({ message: '用户已禁用', errorCode: 'WALLET_USER_DISABLED' });
     }
 
+    await this.loginLockoutService.clear(ip, user.username);
     return this.issueTokens(user, res, req, 'wallet');
   }
 
@@ -492,6 +512,7 @@ export class AuthService {
         userId: user.id,
         walletAddress: checksum,
       });
+      await this.walletAuthService.recordAuthFailure(ctx.ip, user.username, ctx);
       throw new UnauthorizedException({
         message: `当前钱包 ${maskWallet(checksum)} 与账号「${user.username}」绑定的钱包 ${maskWallet(user.walletAddress)} 不一致，请切换至绑定钱包后重试`,
         errorCode: 'WALLET_ADDRESS_MISMATCH',
@@ -505,19 +526,20 @@ export class AuthService {
 
   /**
    * POST /api/auth/refresh — 用 Cookie 中的 refresh 换新 accessToken。
-   * 必须与 Redis refresh:{userId} 一致（踢下线/登出后即失效）。
+   * 必须与 Redis refresh:{userId}:{deviceId} 一致，且 X-Device-Id 与 refresh.did 匹配。
    */
-  async refresh(userId: number, refreshToken: string | undefined, res: Response) {
+  async refresh(userId: number, refreshToken: string | undefined, res: Response, req?: Request) {
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh Token 缺失');
     }
+    const deviceId = requireDeviceId(req);
 
-    const stored = await this.redis.get(`refresh:${userId}`);
+    const stored = await this.redis.get(this.tokenRevoke.refreshKey(userId, deviceId));
     if (!stored || stored !== refreshToken) {
       throw new UnauthorizedException('Refresh Token 无效');
     }
 
-    let payload: { sub: number; type?: string };
+    let payload: { sub: number; type?: string; did?: string };
     const jwtSecret = this.configService.getOrThrow<string>('jwt.secret');
     try {
       payload = await this.jwtService.verifyAsync(refreshToken, {
@@ -527,13 +549,23 @@ export class AuthService {
       throw new UnauthorizedException('Refresh Token 已过期');
     }
 
-    // 防止误把 accessToken 当 refresh 用
-    if (payload.type !== 'refresh') {
-      throw new UnauthorizedException('Refresh Token 无效');
+    // 防止误把 accessToken 当 refresh 用；并校验设备绑定
+    if (payload.type !== 'refresh' || payload.did !== deviceId) {
+      throw new UnauthorizedException({
+        message: 'Refresh Token 无效',
+        errorCode: payload.did && payload.did !== deviceId ? 'DEVICE_MISMATCH' : undefined,
+      });
+    }
+
+    if (await this.tokenRevoke.isRevoked(userId, deviceId)) {
+      throw new UnauthorizedException({
+        message: '登录已失效，请重新登录',
+        errorCode: 'AUTH_SESSION_REVOKED',
+      });
     }
 
     const user = await this.findUserWithRoles(userId);
-    if (!user) {
+    if (!user || user.status !== 1) {
       throw new UnauthorizedException('用户不存在');
     }
 
@@ -542,7 +574,7 @@ export class AuthService {
     const accessExpires = this.configService.getOrThrow<string>('jwt.accessTokenExpiresIn');
 
     const accessToken = await this.jwtService.signAsync(
-      { sub: user.id, username: user.username, permissions, type: 'admin' },
+      { sub: user.id, username: user.username, permissions, type: 'admin', did: deviceId } satisfies JwtPayload,
       this.jwtSignOptions(accessExpires),
     );
 
@@ -558,10 +590,16 @@ export class AuthService {
     return { accessToken };
   }
 
-  /** POST /api/auth/logout — 删 Redis 会话并清 Cookie */
-  async logout(userId: number | undefined, res: Response) {
+  /** POST /api/auth/logout — 仅作废当前设备会话并清 Cookie */
+  async logout(userId: number | undefined, res: Response, req?: Request) {
     if (userId) {
-      await this.redis.del(`refresh:${userId}`, `online:${userId}`);
+      try {
+        const deviceId = requireDeviceId(req);
+        await this.tokenRevoke.revoke(userId, deviceId);
+      } catch {
+        // 无设备头时退化为全用户作废，避免残留会话
+        await this.tokenRevoke.revoke(userId);
+      }
     }
     const cookieName = this.configService.get<string>('jwt.refreshCookieName') ?? 'refresh_token';
     res.clearCookie(cookieName);

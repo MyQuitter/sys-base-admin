@@ -38,7 +38,7 @@ export default () => ({
   /** 密码 bcrypt 哈希轮数，越高越慢越安全 */
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? '10', 10),
 
-  /** 通用文件上传：存储目录、大小上限、MIME 白名单 */
+  /** 通用文件上传：存储目录、大小上限、MIME 白名单（实际还以文件头魔数为准，客户端 MIME 不可信） */
   upload: {
     dest: process.env.UPLOAD_DEST ?? 'uploads',
     maxSize: parseInt(process.env.UPLOAD_MAX_SIZE ?? String(10 * 1024 * 1024), 10),
@@ -63,8 +63,11 @@ export default () => ({
     passwordLoginFallback: process.env.AUTH_PASSWORD_LOGIN_FALLBACK === 'true',
     /** 连续密码登录失败上限，默认 5 次 */
     loginMaxAttempts: parseInt(process.env.AUTH_LOGIN_MAX_ATTEMPTS ?? '5', 10),
-    /** 超限后锁定分钟数，默认 15 分钟 */
     loginLockoutMinutes: parseInt(process.env.AUTH_LOGIN_LOCKOUT_MINUTES ?? '15', 10),
+    /** 同一 IP 对任意用户名累计失败上限，默认 8 次 */
+    loginIpMaxAttempts: parseInt(process.env.AUTH_LOGIN_IP_MAX_ATTEMPTS ?? '8', 10),
+    /** IP 锁定分钟数，默认 60 */
+    loginIpLockoutMinutes: parseInt(process.env.AUTH_LOGIN_IP_LOCKOUT_MINUTES ?? '60', 10),
   },
 
   /** C 端会员 JWT 与 Refresh Cookie */

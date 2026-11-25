@@ -5,6 +5,7 @@ import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 
 /**
  * 权限守卫：在 JWT 通过后校验接口所需的权限码。
+ * 权限来自 JwtStrategy 查库结果，不信任客户端伪造的 payload.permissions。
  * 标记 @Public() 或未标注 @RequirePermissions 的接口直接放行。
  */
 @Injectable()
@@ -12,7 +13,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   /**
-   * 比对请求用户 JWT 中的 permissions 是否包含全部所需权限码。
+   * 比对当前用户权限码是否包含全部所需权限。
    * @throws ForbiddenException 权限不足时返回 FORBIDDEN 及所需权限列表
    */
   canActivate(context: ExecutionContext): boolean {

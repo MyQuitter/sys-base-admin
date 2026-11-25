@@ -4,12 +4,14 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import * as os from 'os';
 import { DataSource } from 'typeorm';
+import { TokenRevokeService } from '../auth/token-revoke.service';
 
 export interface OnlineUserItem {
   userId: number;
   username: string;
   nickname?: string;
   ip?: string;
+  deviceId?: string;
   loginTime: string;
 }
 
@@ -23,6 +25,7 @@ export class MonitorService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     configService: ConfigService,
+    private readonly tokenRevoke: TokenRevokeService,
   ) {
     this.redis = new Redis({
       host: configService.get<string>('redis.host'),
@@ -52,9 +55,9 @@ export class MonitorService {
     return users.sort((a, b) => b.loginTime.localeCompare(a.loginTime));
   }
 
-  /** 强制下线：清除 Refresh Token 与在线状态 */
+  /** 强制下线：作废 Access/Refresh，并从在线列表移除 */
   async kickout(userId: number) {
-    await this.redis.del(`refresh:${userId}`, `online:${userId}`);
+    await this.tokenRevoke.revoke(userId);
     return { success: true };
   }
 

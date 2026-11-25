@@ -32,7 +32,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
-      if (typeof body === 'string') {
+      if (status === HttpStatus.TOO_MANY_REQUESTS) {
+        message = '请求过于频繁，请稍后再试';
+        errorCode = 'RATE_LIMITED';
+        detail = '同一 IP 短时间请求次数过多';
+      } else if (typeof body === 'string') {
         message = body;
         detail = body;
       } else if (typeof body === 'object' && body !== null) {
@@ -40,6 +44,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = (obj.message as string) ?? message;
         errorCode = (obj.errorCode as string) ?? errorCode;
         detail = obj.detail ?? (Array.isArray(obj.message) ? obj.message.join(', ') : undefined);
+        if (typeof message === 'string' && /throttler|too many requests/i.test(message)) {
+          message = '请求过于频繁，请稍后再试';
+          errorCode = 'RATE_LIMITED';
+        }
       }
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);

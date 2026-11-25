@@ -4,9 +4,11 @@ import { randomBytes } from 'crypto';
 import Redis from 'ioredis';
 // viem：校验 EVM 地址格式、转 EIP-55 校验和地址、用 personal_sign 消息验签
 import { getAddress, isAddress, verifyMessage } from 'viem';
+import { formatBeijingDateTime } from '../../../common/utils/datetime';
 import { LogService, ProtectionLogContext, RecordProtectionParams } from '../log/log.service';
 import { ChainService } from '../../blockchain/services/chain.service';
 import { SettingService } from '../setting/setting.service';
+import { LoginLockoutService } from './login-lockout.service';
 
 /** 前端拿到后交给钱包签名的一次性挑战；expiresAt 为 ISO 时间，与 Redis TTL 对齐 */
 export interface WalletNonceResult {
@@ -52,6 +54,7 @@ export class WalletAuthService {
     private readonly settingService: SettingService,
     private readonly logService: LogService,
     private readonly chainService: ChainService,
+    private readonly loginLockout: LoginLockoutService,
   ) {
     // lazyConnect：构造时不阻塞；connect 失败静默，业务侧读写时再暴露错误
     this.redis = new Redis({
@@ -87,7 +90,27 @@ export class WalletAuthService {
    * 规范化钱包地址：先校验是否为合法 EVM 地址，再转为 EIP-55 checksum。
    * 后续 Redis key、验签 address 一律用校验和形式，避免大小写不一致导致 nonce 对不上。
    */
-  normalizeAddress(address: string, ctx?: ProtectionLogContext): string {
+  /**
+   * 钱包认证失败计入与密码登录相同的 IP 计数；达上限则抛 LOGIN_LOCKED。
+   */
+  async recordAuthFailure(ip: string | undefined, account: string, ctx?: ProtectionLogContext) {
+    const lock = await this.loginLockout.recordFailure(ip, account || 'wallet');
+    if (lock.locked) {
+      this.logProtection(ctx, {
+        category: 'auth',
+        eventType: 'LOGIN_LOCKED',
+        errorCode: 'LOGIN_LOCKED',
+        message: '该网络登录失败次数过多，已临时封禁',
+        severity: 'high',
+      });
+      throw this.loginLockout.buildLockedException(
+        lock.retryAfterSeconds ?? 0,
+        lock.scope ?? 'ip',
+      );
+    }
+  }
+
+  async normalizeAddress(address: string, ctx?: ProtectionLogContext): Promise<string> {
     if (!isAddress(address)) {
       this.logProtection(ctx, {
         category: 'wallet',
@@ -96,9 +119,9 @@ export class WalletAuthService {
         message: '钱包地址格式无效',
         severity: 'info',
       });
+      await this.recordAuthFailure(ctx?.ip, address || 'invalid', ctx);
       throw new UnauthorizedException({ message: '钱包地址格式无效', errorCode: 'WALLET_ADDRESS_INVALID' });
     }
-    // getAddress：小写输入 → 带校验和的标准地址
     return getAddress(address);
   }
 
@@ -182,7 +205,7 @@ export class WalletAuthService {
       `链: ${chainName} (chainId: ${chainId})`,
       `地址: ${address}`,
       `Nonce: ${nonce}`,
-      `签发时间: ${new Date().toISOString()}`,
+      `签发时间: ${formatBeijingDateTime()}`,
     ].join('\n');
   }
 
@@ -260,9 +283,9 @@ export class WalletAuthService {
     ctx?: ProtectionLogContext,
   ) {
     // 1. 链必须与站点配置一致
+    await this.loginLockout.assertIpNotLocked(ctx?.ip);
     await this.assertChainId(chainId, ctx);
-    // 2. 非法地址直接拒绝；合法则转 checksum
-    const checksum = this.normalizeAddress(address, ctx);
+    const checksum = await this.normalizeAddress(address, ctx);
     // 3. 高熵随机串，作为本次挑战的唯一标识（也嵌在 message 里）
     const nonce = randomBytes(16).toString('hex');
     // 4. 用户实际签名的是整段 message，不是裸 nonce
@@ -316,8 +339,9 @@ export class WalletAuthService {
     ctx?: ProtectionLogContext,
   ) {
     // —— 1. 链与地址门禁 ——
+    await this.loginLockout.assertIpNotLocked(ctx?.ip);
     await this.assertChainId(chainId, ctx);
-    const checksum = this.normalizeAddress(address, ctx);
+    const checksum = await this.normalizeAddress(address, ctx);
 
     // —— 2. 取回本次挑战；没有则视为过期或未申请 nonce ——
     const raw = await this.redis.get(this.nonceKey(chainId, checksum));
@@ -329,6 +353,7 @@ export class WalletAuthService {
         message: '签名已过期，请重新获取',
         severity: 'warn',
       });
+      await this.recordAuthFailure(ctx?.ip, checksum, { ...ctx, walletAddress: checksum });
       throw new UnauthorizedException({ message: '签名已过期，请重新获取', errorCode: 'WALLET_NONCE_INVALID' });
     }
 
@@ -349,6 +374,7 @@ export class WalletAuthService {
         message: '钱包签名无效',
         severity: 'warn',
       });
+      await this.recordAuthFailure(ctx?.ip, checksum, { ...ctx, walletAddress: checksum });
       throw new UnauthorizedException({ message: '钱包签名无效', errorCode: 'WALLET_SIGNATURE_INVALID' });
     }
 

@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { message } from 'antd';
+
 import request from '@/utils/request';
-import { useAuthStore } from '@/stores/useAuthStore';
+import { getAuthHeaders } from '@/utils/device-id';
 import type { PageResult } from '@/types/api';
 
+import { toast } from '@/utils/toast';
 export interface MemberItem {
   id: number;
   phone?: string;
@@ -70,13 +71,12 @@ export function resetMemberPassword(id: number, password: string) {
 
 /** 导出会员用户 CSV */
 export async function exportMembers(params?: MemberQuery) {
-  const token = useAuthStore.getState().accessToken;
   try {
     const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/members/export`, {
       params,
       responseType: 'blob',
       withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: getAuthHeaders(),
     });
 
     const contentType = String(res.headers['content-type'] ?? '');
@@ -94,7 +94,7 @@ export async function exportMembers(params?: MemberQuery) {
     URL.revokeObjectURL(url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '导出失败';
-    message.error(msg);
+    toast.error(msg);
     throw err;
   }
 }

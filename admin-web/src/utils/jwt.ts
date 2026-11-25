@@ -1,9 +1,21 @@
-/** 从 Access Token 解析权限列表（与后端 JWT payload 一致） */
-export function parseJwtPermissions(token: string): string[] {
+/** 从 Access Token 解析 JWT payload（与后端签发字段一致） */
+export function parseJwtPayload(token: string): {
+  sub?: number;
+  username?: string;
+  permissions?: string[];
+} | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1])) as { permissions?: string[] };
-    return payload.permissions ?? [];
+    return JSON.parse(atob(token.split('.')[1])) as {
+      sub?: number;
+      username?: string;
+      permissions?: string[];
+    };
   } catch {
-    return [];
+    return null;
   }
+}
+
+/** 从 Access Token 解析权限列表 */
+export function parseJwtPermissions(token: string): string[] {
+  return parseJwtPayload(token)?.permissions ?? [];
 }

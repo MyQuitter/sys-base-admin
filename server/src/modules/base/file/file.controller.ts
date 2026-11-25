@@ -8,14 +8,16 @@ import {
   Post,
   Query,
   Req,
+  Res,
   StreamableFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { memoryStorage } from 'multer';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { SkipWrap } from '../../../common/decorators/skip-wrap.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { QueryFileDto } from './dto/query-file.dto';
@@ -27,12 +29,14 @@ export class FileController {
   constructor(private readonly fileService: FileService) {}
 
   @Post('upload')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @RequirePermissions('file:upload')
   @ApiOperation({ summary: '上传文件（支持多文件）' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FilesInterceptor('file', 20, {
       storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024, files: 20 },
     }),
   )
   async upload(@UploadedFiles() files: Express.Multer.File[], @Req() req: Request) {
@@ -53,9 +57,10 @@ export class FileController {
   @SkipWrap()
   @RequirePermissions('file:download')
   @ApiOperation({ summary: '下载或预览文件' })
-  async download(@Param('id', ParseIntPipe) id: number) {
+  async download(@Param('id', ParseIntPipe) id: number, @Res({ passthrough: true }) res: Response) {
     const { record, stream, disposition } = await this.fileService.getDownloadMeta(id);
     const encodedName = encodeURIComponent(record.originalName);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     return new StreamableFile(stream, {
       type: record.mimeType,
       disposition: `${disposition}; filename*=UTF-8''${encodedName}`,

@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { Form, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   bindUserWallet,
@@ -14,7 +14,9 @@ import { isAddress } from 'viem';
 import { getRoles } from '@/api/role';
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
+import { useAuthStore } from '@/stores/useAuthStore';
 
+import { toast } from '@/utils/toast';
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 },
@@ -25,6 +27,7 @@ const statusOptions = [
  * 行内操作通过 AuthButton 按 RBAC 权限码显隐；角色选项来自 getRoles。
  */
 export default function UserListPage() {
+  const currentUserId = useAuthStore((s) => s.userInfo?.id);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<UserItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -38,6 +41,7 @@ export default function UserListPage() {
   const [pwdUserId, setPwdUserId] = useState<number | null>(null);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [walletUser, setWalletUser] = useState<UserItem | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [form] = Form.useForm();
   const [pwdForm] = Form.useForm();
   const [walletForm] = Form.useForm();
@@ -85,19 +89,36 @@ export default function UserListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateUser(editing.id, values);
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createUser(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
   };
 
   const handleDelete = async (id: number) => {
-    await deleteUser(id);
-    message.success('删除成功');
-    loadData();
+    if (deletingId != null) return;
+    setDeletingId(id);
+    // 先从列表移除，避免接口成功后刷新慢或重复点击仍看到该行
+    const prevData = data;
+    const prevTotal = total;
+    setData((rows) => rows.filter((row) => row.id !== id));
+    setTotal((n) => Math.max(0, n - 1));
+    try {
+      await deleteUser(id);
+      toast.success('删除成功');
+      await loadData();
+    } catch (err: unknown) {
+      setData(prevData);
+      setTotal(prevTotal);
+      // 全局 request 拦截器已 toast，这里仅在无 message 时兜底
+      const msg = (err as Error)?.message;
+      if (!msg) toast.error('删除失败');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const openResetPwd = (id: number) => {
@@ -110,7 +131,7 @@ export default function UserListPage() {
     const values = await pwdForm.validateFields();
     if (!pwdUserId) return;
     await resetPassword(pwdUserId, values.password);
-    message.success('密码已重置');
+    toast.success('密码已重置');
     setPwdModalOpen(false);
   };
 
@@ -124,18 +145,18 @@ export default function UserListPage() {
     const values = await walletForm.validateFields();
     if (!walletUser) return;
     if (!isAddress(values.walletAddress)) {
-      message.error('钱包地址格式无效');
+      toast.error('钱包地址格式无效');
       return;
     }
     await bindUserWallet(walletUser.id, values.walletAddress);
-    message.success('钱包绑定成功');
+    toast.success('钱包绑定成功');
     setWalletModalOpen(false);
     loadData();
   };
 
   const handleUnbindWallet = async (record: UserItem) => {
     await unbindUserWallet(record.id);
-    message.success('已解绑钱包');
+    toast.success('已解绑钱包');
     loadData();
   };
 
@@ -207,16 +228,32 @@ export default function UserListPage() {
                 <AuthButton size="small" permission="user:reset-password" onClick={() => openResetPwd(record.id)}>
                   重置密码
                 </AuthButton>
-                <AuthButton
-                  size="small"
-                  danger
-                  permission="user:delete"
-                  disabled={total <= 1}
-                  title={total <= 1 ? '系统至少保留一名用户' : undefined}
-                  onClick={() => handleDelete(record.id)}
+                <Popconfirm
+                  title={
+                    record.id === currentUserId
+                      ? '不能删除当前登录账号，请使用其他管理员操作'
+                      : `确认删除用户 ${record.username}？`
+                  }
+                  disabled={record.id === currentUserId || total <= 1 || deletingId === record.id}
+                  onConfirm={() => handleDelete(record.id)}
                 >
-                  删除
-                </AuthButton>
+                  <AuthButton
+                    size="small"
+                    danger
+                    permission="user:delete"
+                    loading={deletingId === record.id}
+                    disabled={record.id === currentUserId || total <= 1 || deletingId === record.id}
+                    title={
+                      record.id === currentUserId
+                        ? '不能删除当前登录账号'
+                        : total <= 1
+                          ? '系统至少保留一名用户'
+                          : undefined
+                    }
+                  >
+                    删除
+                  </AuthButton>
+                </Popconfirm>
               </Space>
             ),
           },

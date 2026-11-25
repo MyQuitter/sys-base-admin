@@ -3,6 +3,12 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": false,
+    "assets": [
+      {
+        "include": "modules/crm-whitelist/abi/*.json",
+        "watchAssets": true
+      }
+    ]
   }
 }

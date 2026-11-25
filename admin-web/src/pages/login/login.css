@@ -171,6 +171,41 @@
   animation: login-card-enter 0.55s ease-out both;
 }
 
+.login-captcha {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.login-captcha .ant-input {
+  flex: 1;
+}
+
+.login-captcha__img {
+  flex: none;
+  width: 120px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #f1f5f9;
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+}
+
+.login-captcha__img.is-loading {
+  opacity: 0.55;
+}
+
+.login-captcha__img img {
+  display: block;
+  width: 120px;
+  height: 40px;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
 @keyframes login-blob-a {
   0%,
   100% {

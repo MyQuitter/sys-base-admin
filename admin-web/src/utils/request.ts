@@ -1,7 +1,9 @@
 import axios from 'axios';
-import { message as antdMessage } from 'antd';
+import { toast } from '@/utils/toast';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { parseJwtPermissions } from '@/utils/jwt';
+import { appHref } from '@/utils/app-base';
+import { getOrCreateDeviceId } from '@/utils/device-id';
 import { useLoadingStore } from '@/stores/useLoadingStore';
 
 declare module 'axios' {
@@ -27,6 +29,7 @@ function isPublicAuthRequest(url?: string) {
   if (!url) return false;
   return (
     url.includes('/auth/login') ||
+    url.includes('/auth/captcha') ||
     url.includes('/auth/wallet/login') ||
     url.includes('/auth/wallet/complete') ||
     url.includes('/auth/wallet/nonce') ||
@@ -46,7 +49,7 @@ let refreshQueue: Array<(token: string) => void> = [];
  * Refresh Token 通过 Cookie 自动携带，前端不读写。
  */
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
   withCredentials: true,
 });
@@ -55,6 +58,7 @@ request.interceptors.request.use((config) => {
   if (shouldTrackLoading(config.url, config.skipLoading)) {
     startLoading();
   }
+  config.headers['X-Device-Id'] = getOrCreateDeviceId();
   const token = useAuthStore.getState().accessToken;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -69,13 +73,23 @@ request.interceptors.response.use(
     }
     const { code, data, message: msg } = res.data;
     if (code === 200) return data;
-    antdMessage.error(msg ?? '请求失败');
+    toast.error(msg ?? '请求失败');
     return Promise.reject(new Error(msg));
   },
   async (error) => {
     const original = error.config;
     if (original && shouldTrackLoading(original.url, original.skipLoading)) {
       doneLoading();
+    }
+    const errorCode = error.response?.data?.errorCode as string | undefined;
+    const forceRelogin =
+      errorCode === 'AUTH_SESSION_REVOKED' ||
+      errorCode === 'DEVICE_MISMATCH' ||
+      errorCode === 'DEVICE_ID_REQUIRED';
+    if (error.response?.status === 401 && forceRelogin) {
+      useAuthStore.getState().logout();
+      window.location.href = appHref('/login');
+      return Promise.reject(error);
     }
     // 401 且非 refresh / 登录接口：尝试用 Cookie 刷新 Access Token 后重试原请求
     if (
@@ -111,18 +125,31 @@ request.interceptors.response.use(
         return request(original);
       } catch {
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        window.location.href = appHref('/login');
         return Promise.reject(error);
       } finally {
         isRefreshing = false;
       }
     }
 
-    const msg = error.response?.data?.message ?? '网络异常';
+    const data = error.response?.data as { message?: string; errorCode?: string; detail?: unknown } | undefined;
+    const msg =
+      data?.message ??
+      (error.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : null) ??
+      error.message ??
+      '网络异常';
     if (!original?.skipErrorToast) {
-      antdMessage.error(msg);
+      toast.error(msg);
     }
-    return Promise.reject(error);
+    const wrapped = new Error(msg) as Error & {
+      errorCode?: string;
+      detail?: unknown;
+      response?: unknown;
+    };
+    wrapped.errorCode = data?.errorCode;
+    wrapped.detail = data?.detail;
+    wrapped.response = error.response;
+    return Promise.reject(wrapped);
   },
 );
 

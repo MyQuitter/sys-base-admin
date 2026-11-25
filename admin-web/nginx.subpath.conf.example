@@ -1,0 +1,21 @@
+# aaPanel「URL 重写」只贴这些。不要写 location /api。
+# JS 被当成 text/html：静态资源走了 SPA 回退，必须单独配 /assets/。
+
+location ^~ /n8kQ2mWp4xR7vL9cF3/assets/ {
+    alias /www/wwwroot/cram/web-admin/assets/;
+}
+
+location ^~ /n8kQ2mWp4xR7vL9cF3/favicon.svg {
+    alias /www/wwwroot/cram/web-admin/favicon.svg;
+}
+
+location /n8kQ2mWp4xR7vL9cF3/ {
+    alias /www/wwwroot/cram/web-admin/;
+    index index.html;
+    try_files $uri $uri/ @admin_spa;
+}
+
+location @admin_spa {
+    default_type text/html;
+    alias /www/wwwroot/cram/web-admin/index.html;
+}

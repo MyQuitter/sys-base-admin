@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, Space, message } from 'antd';
+import { Form, Input, Modal, Select, Space } from 'antd';
 import { useEffect, useState } from 'react';
 import {
   createNotice,
@@ -12,6 +12,8 @@ import {
 import { AuthButton } from '@/components/AuthButton';
 import { PageTable } from '@/components/PageTable';
 
+import { formatDateTime } from '@/utils/format';
+import { toast } from '@/utils/toast';
 const statusLabel: Record<number, string> = {
   0: '草稿',
   1: '已发布',
@@ -70,10 +72,10 @@ export default function NoticeListPage() {
     const values = await form.validateFields();
     if (editing) {
       await updateNotice(editing.id, values);
-      message.success('更新成功');
+      toast.success('更新成功');
     } else {
       await createNotice(values);
-      message.success('创建成功');
+      toast.success('创建成功');
     }
     setModalOpen(false);
     loadData();
@@ -81,13 +83,13 @@ export default function NoticeListPage() {
 
   const handlePublish = async (record: NoticeItem) => {
     const res = await publishNotice(record.id, { targetType: record.targetType ?? 'all', targetIds: record.targetIds });
-    message.success(`发布成功，已投递 ${res.deliveredCount} 人`);
+    toast.success(`发布成功，已投递 ${res.deliveredCount} 人`);
     loadData();
   };
 
   const handleRevoke = async (record: NoticeItem) => {
     await revokeNotice(record.id);
-    message.success('已撤回');
+    toast.success('已撤回');
     loadData();
   };
 
@@ -122,7 +124,11 @@ export default function NoticeListPage() {
             width: 100,
             render: (v: string) => targetTypeOptions.find((o) => o.value === v)?.label ?? v,
           },
-          { title: '发布时间', dataIndex: 'publishTime' },
+          {
+            title: '发布时间',
+            dataIndex: 'publishTime',
+            render: (v?: string) => (v ? formatDateTime(v) : '-'),
+          },
           {
             title: '操作',
             width: 220,
@@ -149,7 +155,7 @@ export default function NoticeListPage() {
                   permission="notice:delete"
                   onClick={async () => {
                     await deleteNotice(record.id);
-                    message.success('删除成功');
+                    toast.success('删除成功');
                     loadData();
                   }}
                 >

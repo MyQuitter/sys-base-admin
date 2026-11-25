@@ -45,13 +45,6 @@ export class UserController {
     return this.userService.update(id, dto);
   }
 
-  @Delete(':id')
-  @RequirePermissions('user:delete')
-  @ApiOperation({ summary: '删除用户' })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.userService.remove(id);
-  }
-
   @Post(':id/reset-password')
   @RequirePermissions('user:reset-password')
   @ApiOperation({ summary: '重置用户密码' })
@@ -72,5 +65,13 @@ export class UserController {
   @ApiOperation({ summary: '解绑用户钱包' })
   unbindWallet(@Param('id', ParseIntPipe) id: number) {
     return this.userService.unbindWallet(id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('user:delete')
+  @ApiOperation({ summary: '删除用户' })
+  remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const operatorId = (req.user as { userId: number }).userId;
+    return this.userService.remove(id, operatorId);
   }
 }

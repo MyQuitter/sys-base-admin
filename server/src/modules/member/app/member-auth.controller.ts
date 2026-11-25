@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Put, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../../common/decorators/public.decorator';
 import { MemberChangePasswordDto, MemberLoginDto, MemberRegisterDto, MemberUpdateProfileDto } from './dto/member-auth.dto';
 import { MemberJwtGuard } from './guards/member-jwt.guard';
@@ -13,6 +14,7 @@ export class MemberAuthController {
   constructor(private readonly memberAuthService: MemberAuthService) {}
 
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @ApiOperation({ summary: '会员用户注册' })
   register(@Body() dto: MemberRegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -20,6 +22,7 @@ export class MemberAuthController {
   }
 
   @HttpCode(200)
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('login')
   @ApiOperation({ summary: '会员用户登录' })
   login(@Body() dto: MemberLoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { Request, Response } from 'express';
@@ -8,6 +8,7 @@ import { LoginLockoutService } from '../../base/auth/login-lockout.service';
 import { LogService } from '../../base/log/log.service';
 import { MemberChangePasswordDto, MemberLoginDto, MemberRegisterDto, MemberUpdateProfileDto } from './dto/member-auth.dto';
 import { MemberService } from '../member.service';
+import { getClientIp } from '../../../common/utils/client-ip';
 
 export interface MemberJwtPayload {
   sub: number;
@@ -42,7 +43,7 @@ export class MemberAuthService {
   }
 
   private getIp(req?: Request) {
-    return req?.ip ?? req?.socket?.remoteAddress;
+    return getClientIp(req);
   }
 
   private recordMemberLogin(params: {
@@ -115,7 +116,15 @@ export class MemberAuthService {
     return { accessToken, memberInfo: full };
   }
 
+  private assertMemberAuthOpen() {
+    throw new ForbiddenException({
+      message: '会员注册与登录已关闭',
+      errorCode: 'MEMBER_AUTH_CLOSED',
+    });
+  }
+
   async register(dto: MemberRegisterDto, res: Response, req?: Request) {
+    this.assertMemberAuthOpen();
     this.memberService.assertPhoneOrEmail(dto.phone, dto.email);
     const member = await this.memberService.create(
       {
@@ -131,6 +140,7 @@ export class MemberAuthService {
   }
 
   async login(dto: MemberLoginDto, res: Response, req?: Request) {
+    this.assertMemberAuthOpen();
     const account = dto.account.trim();
     const ip = this.getIp(req);
     await this.loginLockoutService.assertNotLocked(ip, account, this.lockScope);
@@ -161,6 +171,7 @@ export class MemberAuthService {
   }
 
   async refresh(memberId: number, refreshToken: string | undefined, res: Response) {
+    this.assertMemberAuthOpen();
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh Token 缺失');
     }

@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { message } from 'antd';
+
 import request from '@/utils/request';
-import { useAuthStore } from '@/stores/useAuthStore';
+import { getAuthHeaders } from '@/utils/device-id';
 import type { PageResult } from '@/types/api';
 
+import { toast } from '@/utils/toast';
 export interface FileItem {
   id: number;
   originalName: string;
@@ -59,12 +60,11 @@ export function uploadFiles(files: File[]) {
 
 /** blob 下载或触发浏览器保存 */
 export async function downloadFile(id: number, filename: string) {
-  const token = useAuthStore.getState().accessToken;
   try {
     const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/files/${id}/download`, {
       responseType: 'blob',
       withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: getAuthHeaders(),
     });
 
     const contentType = String(res.headers['content-type'] ?? '');
@@ -82,18 +82,17 @@ export async function downloadFile(id: number, filename: string) {
     URL.revokeObjectURL(url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '下载失败';
-    message.error(msg);
+    toast.error(msg);
     throw err;
   }
 }
 
 /** 图片预览 URL（带鉴权 blob） */
 export async function fetchFileBlobUrl(id: number) {
-  const token = useAuthStore.getState().accessToken;
   const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/files/${id}/download`, {
     responseType: 'blob',
     withCredentials: true,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: getAuthHeaders(),
   });
   return URL.createObjectURL(res.data);
 }

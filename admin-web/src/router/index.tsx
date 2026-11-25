@@ -36,7 +36,10 @@ const suspense = (node: React.ReactNode) => <Suspense fallback={<Spin />}>{node}
 /**
  * 应用路由表：登录页公开；业务页经 AuthGuard + BasicLayout 嵌套。
  */
-export const router = createBrowserRouter([
+const routerBasename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
+
+export const router = createBrowserRouter(
+  [
   { path: '/login', element: suspense(<LoginPage />) },
   {
     path: '/',
@@ -75,4 +78,6 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
-]);
+],
+  { basename: routerBasename },
+);

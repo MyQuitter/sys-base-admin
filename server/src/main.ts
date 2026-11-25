@@ -14,14 +14,35 @@ const cookieParser = require('cookie-parser');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const helmet = require('helmet');
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.getInstance()?.set?.('trust proxy', 1);
 
   app.setGlobalPrefix('api');
-  app.use(helmet());
+  const corsOrigins = (configService.get<string[]>('corsOrigins') ?? []).map((s) => s.trim()).filter(Boolean);
+  const isAllowedOrigin = (origin?: string) => {
+    if (!origin) return true;
+    if (corsOrigins.includes(origin)) return true;
+    try {
+      const { protocol, hostname } = new URL(origin);
+      if (protocol !== 'http:' && protocol !== 'https:') return false;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+      return hostname === 'craymat.com' || hostname.endsWith('.craymat.com');
+    } catch {
+      return false;
+    }
+  };
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.use(cookieParser());
   app.enableCors({
-    origin: configService.get<string[]>('corsOrigins'),
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin));
+    },
     credentials: true,
   });
   app.useGlobalPipes(
@@ -46,13 +67,30 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
-
   const port = configService.get<number>('port') ?? 3000;
-  await app.listen(port);
-  console.log(`Server running on http://localhost:${port}/api`);
-  console.log(`Swagger: http://localhost:${port}/api/docs`);
+  const nodeEnv = configService.get<string>('nodeEnv') ?? 'development';
+  const jwtSecret = configService.getOrThrow<string>('jwt.secret');
+  const weakJwtSecrets = new Set([
+    'dev-secret-key-must-be-at-least-32-characters-long',
+    'your-secret-key-at-least-32-chars',
+    'your-secret-key-here-must-be-at-least-32-characters',
+  ]);
+  if (nodeEnv === 'production') {
+    if (jwtSecret.length < 32 || weakJwtSecrets.has(jwtSecret)) {
+      throw new Error('生产环境必须配置足够强的 JWT_SECRET（≥32 字符，且不能使用示例密钥）');
+    }
+  } else if (weakJwtSecrets.has(jwtSecret)) {
+    console.warn('[security] 当前使用示例 JWT_SECRET，切勿用于公网环境');
+  }
+
+  if (nodeEnv !== 'production') {
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+    console.log(`Swagger: http://127.0.0.1:${port}/api/docs`);
+  }
+
+  await app.listen(port, '0.0.0.0');
+  console.log(`Server running on http://0.0.0.0:${port}/api`);
 }
 
 bootstrap();

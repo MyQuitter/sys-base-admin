@@ -1,10 +1,12 @@
-import { Button, Popconfirm, Table, Typography, message } from 'antd';
+import { Button, Popconfirm, Table, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { getOnlineUsers, kickoutUser, type OnlineUserItem } from '@/api/monitor';
 import { AuthButton } from '@/components/AuthButton';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { formatDateTime } from '@/utils/format';
 
+import { appHref } from '@/utils/app-base';
+import { toast } from '@/utils/toast';
 /**
  * 在线用户页：展示 Redis 在线会话，支持强制下线。
  */
@@ -31,7 +33,14 @@ export default function OnlineUsersPage() {
 
   const handleKickout = async (userId: number) => {
     await kickoutUser(userId);
-    message.success('已强制下线');
+    const me = useAuthStore.getState().userInfo?.id;
+    if (me === userId) {
+      toast.success('已强制下线');
+      useAuthStore.getState().logout();
+      window.location.href = appHref('/login');
+      return;
+    }
+    toast.success('已强制下线');
     loadData();
   };
 

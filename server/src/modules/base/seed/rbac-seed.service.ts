@@ -304,12 +304,12 @@ export class RbacSeedService implements OnModuleInit {
     let user = await this.userRepository.findOne({
       where: { username: 'admin' },
       relations: { roles: true },
+      withDeleted: true,
     });
 
-    const rounds = this.configService.get<number>('bcryptRounds') ?? 10;
-    const password = await bcrypt.hash('Admin@123', rounds);
-
     if (!user) {
+      const rounds = this.configService.get<number>('bcryptRounds') ?? 10;
+      const password = await bcrypt.hash('Admin@123', rounds);
       user = this.userRepository.create({
         username: 'admin',
         password,
@@ -319,6 +319,15 @@ export class RbacSeedService implements OnModuleInit {
       });
       await this.userRepository.save(user);
       return;
+    }
+
+    if (user.deletedAt) {
+      const living = await this.userRepository.count();
+      if (living > 0) {
+        return;
+      }
+      await this.userRepository.restore(user.id);
+      user.deletedAt = undefined;
     }
 
     const hasAdminRole = user.roles?.some((r) => r.code === 'admin');

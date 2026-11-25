@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
+import { formatBeijingDateTime } from '../../../common/utils/datetime';
 import { maskWallet } from '../../../common/utils/wallet';
 import { getPagination, toPageResult } from '../../../common/utils/pagination';
 import { QueryLoginLogDto } from './dto/query-login-log.dto';
@@ -169,7 +170,25 @@ export class LogService {
       order: { id: 'DESC' },
     });
 
-    return toPageResult(items, total, page, pageSize);
+    return toPageResult(
+      items.map((l) => ({
+        id: l.id,
+        category: l.category,
+        eventType: l.eventType,
+        errorCode: l.errorCode,
+        username: l.username,
+        userId: l.userId,
+        walletAddress: l.walletAddress,
+        ip: l.ip,
+        path: l.path,
+        message: l.message,
+        severity: l.severity,
+        createdAt: l.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+    );
   }
 
   /** 导出操作日志为 CSV 文本（含 UTF-8 BOM） */
@@ -239,7 +258,7 @@ export class LogService {
             csvCell(l.path),
             csvCell(l.severity),
             csvCell(l.message),
-            csvCell(l.createdAt),
+            csvCell(l.createdAt ? formatBeijingDateTime(new Date(l.createdAt)) : ''),
           ].join(','),
       )
       .join('\n');

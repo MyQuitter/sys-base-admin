@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,7 @@ import { In, Like, Repository } from 'typeorm';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { getPagination, toPageResult } from '../../../common/utils/pagination';
 import { maskWallet } from '../../../common/utils/wallet';
+import { TokenRevokeService } from '../auth/token-revoke.service';
 import { Position } from '../position/entities/position.entity';
 import { Role } from '../role/entities/role.entity';
 import { BindWalletDto } from './dto/bind-wallet.dto';
@@ -29,6 +30,8 @@ export class UserService {
     @InjectRepository(Position)
     private readonly positionRepository: Repository<Position>,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => TokenRevokeService))
+    private readonly tokenRevoke: TokenRevokeService,
   ) {}
 
   private toUserVo(user: User) {
@@ -130,16 +133,45 @@ export class UserService {
     return this.findOne(id);
   }
 
-  async remove(id: number) {
-    const user = await this.userRepository.findOne({ where: { id } });
+  /**
+   * 软删除用户：已删除视为成功（幂等）；删除后立即作废其全部登录会话。
+   */
+  async remove(id: number, operatorId?: number) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: { roles: true },
+      withDeleted: true,
+    });
     if (!user) throw new NotFoundException('用户不存在');
+    if (user.deletedAt) {
+      await this.tokenRevoke.revoke(id);
+      return { success: true };
+    }
+
+    if (operatorId && operatorId === id) {
+      throw new BusinessException('不能删除当前登录账号，请使用其他管理员操作', 'USER_CANNOT_DELETE_SELF');
+    }
 
     const activeCount = await this.userRepository.count();
     if (activeCount <= 1) {
       throw new BusinessException('系统至少保留一名用户，无法删除', 'USER_LAST_ONE');
     }
 
-    await this.userRepository.softRemove(user);
+    const isAdmin = user.roles?.some((r) => r.code === 'admin');
+    if (isAdmin) {
+      const adminUsers = await this.userRepository
+        .createQueryBuilder('user')
+        .innerJoin('user.roles', 'role')
+        .where('role.code = :code', { code: 'admin' })
+        .andWhere('user.id != :id', { id })
+        .getCount();
+      if (adminUsers < 1) {
+        throw new BusinessException('至少保留一名超级管理员', 'USER_LAST_ADMIN');
+      }
+    }
+
+    await this.userRepository.softDelete(id);
+    await this.tokenRevoke.revoke(id);
     return { success: true };
   }
 

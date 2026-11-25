@@ -4,13 +4,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createReadStream, existsSync, writeFileSync } from 'fs';
 import { extname, join } from 'path';
 import { IsNull, Not, Repository } from 'typeorm';
+import { inspectUpload } from '../../../common/utils/upload-file';
 import { ChainService } from '../../blockchain/services/chain.service';
 import { User } from '../user/entities/user.entity';
 import { UpdateSiteSettingDto } from './dto/update-site-setting.dto';
 import { DEFAULT_WALLET_CHAIN_ID } from './evm-chains';
 import { SiteSettingStore } from './site-setting.store';
 import type { LoginMode, SiteSettingData, SiteSettingVo } from './site-setting.types';
-const LOGO_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);
+
+/** Logo 仅允许位图，禁止 SVG（可嵌脚本）。类型以魔数为准。 */
+const LOGO_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const FAVICON_MIME = new Set([...LOGO_MIME, 'image/x-icon', 'image/vnd.microsoft.icon']);
 
 /**
@@ -125,15 +128,14 @@ export class SettingService {
     return this.toVo(next);
   }
 
+  /**
+   * 保存 Logo/Favicon：用文件头识别类型，禁止 SVG 与夹带脚本。
+   */
   async saveBranding(type: 'logo' | 'favicon', file: Express.Multer.File) {
     if (!file) throw new BadRequestException('请选择文件');
     const allowed = type === 'logo' ? LOGO_MIME : FAVICON_MIME;
-    if (!allowed.has(file.mimetype)) {
-      throw new BadRequestException('不支持的图片格式');
-    }
-
-    const ext = extname(file.originalname) || '.png';
-    const fileName = type === 'logo' ? `logo${ext}` : `favicon${ext}`;
+    const inspected = inspectUpload(file.buffer, file.originalname, allowed);
+    const fileName = type === 'logo' ? `logo${inspected.ext}` : `favicon${inspected.ext}`;
     const current = this.readData();
     const oldFile = type === 'logo' ? current.logoFile : current.faviconFile;
 

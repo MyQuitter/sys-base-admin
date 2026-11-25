@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Header, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { SkipWrap } from '../../../common/decorators/skip-wrap.decorator';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { CreateMemberDto, QueryMemberDto, ResetMemberPasswordDto, UpdateMemberDto } from '../dto/member.dto';
@@ -35,6 +36,7 @@ export class MemberAdminController {
   }
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @RequirePermissions('member:create')
   @ApiOperation({ summary: '创建会员用户' })
   create(@Body() dto: CreateMemberDto) {

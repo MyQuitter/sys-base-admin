@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -11,13 +11,15 @@ import { User } from '../user/entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TokenRevokeService } from './token-revoke.service';
 import { LoginLockoutService } from './login-lockout.service';
 import { WalletAuthService } from './wallet-auth.service';
+import { LoginCaptchaService } from './login-captcha.service';
 
 @Module({
   imports: [
     LogModule,
-    UserModule,
+    forwardRef(() => UserModule),
     SettingModule,
     BlockchainModule,
     TypeOrmModule.forFeature([User]),
@@ -34,7 +36,14 @@ import { WalletAuthService } from './wallet-auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, WalletAuthService, LoginLockoutService, JwtStrategy],
-  exports: [AuthService, JwtModule, LoginLockoutService],
+  providers: [
+    AuthService,
+    WalletAuthService,
+    LoginLockoutService,
+    LoginCaptchaService,
+    TokenRevokeService,
+    JwtStrategy,
+  ],
+  exports: [AuthService, JwtModule, LoginLockoutService, TokenRevokeService],
 })
 export class AuthModule {}

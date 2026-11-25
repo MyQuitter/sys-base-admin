@@ -4,6 +4,8 @@ import type { UserInfo } from '@/types/api';
 export interface LoginParams {
   username: string;
   password: string;
+  captchaId: string;
+  captchaCode: string;
 }
 
 export interface LoginTicketResult {
@@ -36,6 +38,15 @@ export type LoginResponse = { accessToken: string; userInfo: UserInfo } | LoginT
 
 export function isLoginTicketResult(res: LoginResponse): res is LoginTicketResult {
   return 'needWalletVerify' in res && res.needWalletVerify === true;
+}
+
+export function getLoginCaptcha() {
+  return request.get<never, { captchaId: string; image: string; expiresIn: number }>('/auth/captcha', {
+    params: { t: Date.now() },
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    skipLoading: true,
+    skipErrorToast: true,
+  });
 }
 
 /** 用户登录，成功后 body 返回 accessToken 或 both 模式下的 loginTicket */
